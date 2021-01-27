@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Morning tennis scheduler</title>
+    <link rel="stylesheet" href="main.css">
+    <!-- update the version number as needed -->
+    <script defer src="/__/firebase/8.2.3/firebase-app.js"></script>
+    <!-- include only the Firebase features as you need -->
+    <script defer src="/__/firebase/8.2.3/firebase-auth.js"></script>
+    <script defer src="/__/firebase/8.2.3/firebase-database.js"></script>
+    <script defer src="/__/firebase/8.2.3/firebase-firestore.js"></script>
+    <script defer src="/__/firebase/8.2.3/firebase-functions.js"></script>
+    <script defer src="/__/firebase/8.2.3/firebase-messaging.js"></script>
+    <script defer src="/__/firebase/8.2.3/firebase-storage.js"></script>
+    <script defer src="/__/firebase/8.2.3/firebase-analytics.js"></script>
+    <script defer src="/__/firebase/8.2.3/firebase-remote-config.js"></script>
+    <script defer src="/__/firebase/8.2.3/firebase-performance.js"></script>
+    <link rel="stylesheet" href="dtsel.css" />
+    <script src="dtsel.js"></script>
+    <!-- 
+      initialize the SDK after all desired features are loaded, set useEmulator to false
+      to avoid connecting the SDK to running emulators.
+    -->
+    <script defer src="/__/firebase/init.js?useEmulator=true"></script>
+
+    <style media="screen">
+      body { background: #ECEFF1; color: rgba(0,0,0,0.87); font-family: Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 0; }
+      #message { background: white; max-width: 680px; margin: 100px auto 16px; padding: 32px 24px; border-radius: 3px; }
+      #message h2 { color: #ffa100; font-weight: bold; font-size: 16px; margin: 0 0 8px; }
+      #message h1 { font-size: 22px; font-weight: 300; color: rgba(0,0,0,0.6); margin: 0 0 16px;}
+      #message p { line-height: 140%; margin: 16px 0 24px; font-size: 14px; }
+      #message a { display: block; text-align: center; background: #039be5; text-transform: uppercase; text-decoration: none; color: white; padding: 16px; border-radius: 4px; }
+      #message, #message a { box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24); }
+      #load { color: rgba(0,0,0,0.4); text-align: center; font-size: 13px; }
+      @media (max-width: 800px) {
+        body, #message { margin-top: 0; background: white; box-shadow: none; }
+        body { border-top: 16px solid #ffa100; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="message">
+      <h2>Welcome</h2>
+      <h1 id="header"></h1>
+      <p>If you don't see your name and want to play, click the button below to submit your preferred availabilty. </p>
+      
+      <p id="load">Schedule Loading&hellip;</p>
+      <input id="cal" name="dateTimePicker" />
+      <div id="table" class="flex-container">
+      </div>
+    <div></div>
+      <h2>First 4 are players. Others listed are alternates by order.</h2>
+      <div>
+        <p id="playerCount"></p>
+      </div>
+      <a target="_blank" href="https://docs.google.com/forms/d/e/1FAIpQLSc3pgU5-X2NASXp2mkisZ2vQ1Qw0KnGxMhtXD1PRMrLBg0O-Q/viewform?usp=sf_link">Submit availabilty</a>
+      <h3>FAQ</h3>
+      <h4>What if i don't see my name after completing the form?</h4>
+      <p class="tiny">Sometimes the schedule doesn't update right away, but as long as you complete the form your info and spot will be saved. If after an hour, it still doesn't update, let me know and I will fix it.</p>
+      <h4>When does the schedule "lock"?</h4>
+      <p class="tiny">The cutoff for submitting your playing days is <b>6pm</b> 
+        on the Sunday night before. 
+        This way the players on Monday can go to bed without worrying about 
+        getting bumped off the schedule.</p>
+    <h4>How does it decide when people play?</h4>
+    <p class="tiny">Let's say Bob and Alice are the only ones to submit. 
+      Bob requested Wednesday, Tuesday then Monday, while Alice requested Monday
+       then Tuesday. Bob would get first priority for Wednesday, 
+       followed by Alice for Monday. After everyone's first choice, it gives
+        priority in reverse order. So now Alice would get first pick for Tuesday,
+         then Bob for Tuesday. Finally Bob would then also get Monday. If you've ever played
+        Settlers of Catan, it's the same picking algorithm for placing inital settlements.</p>
+    
+    
+  </div>
+  
+
+  
+    <script src="main.js"></script>
+    <script>
+      document.addEventListener('DOMContentLoaded', function() {
+        const loadEl = document.querySelector('#load');
+        // // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+        // // The Firebase SDK is initialized and available here!
+        //
+        // firebase.auth().onAuthStateChanged(user => { });
+        // firebase.database().ref('/path/to/ref').on('value', snapshot => { });
+        // firebase.firestore().doc('/foo/bar').get().then(() => { });
+        // firebase.functions().httpsCallable('yourFunction')().then(() => { });
+        // firebase.messaging().requestPermission().then(() => { });
+        // firebase.storage().ref('/path/to/ref').getDownloadURL().then(() => { });
+        // firebase.analytics(); // call to activate
+        // firebase.analytics().logEvent('tutorial_completed');
+        // firebase.performance(); // call to activate
+        //
+        // // 🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+
+        try {
+          let app = firebase.app();
+          let features = [
+            'auth', 
+            'database', 
+            'firestore',
+            'functions',
+            'messaging', 
+            'storage', 
+            'analytics', 
+            'remoteConfig',
+            'performance',
+          ].filter(feature => typeof app[feature] === 'function');
+          
+          var date = new URLSearchParams(window.location.search).get("date")
+          if (date == undefined) {
+            loadEl.style.display = "none";
+          } else {
+            loadEl.style.display = "block";
+            document.getElementById("cal").style.display = "none";
+            var query = firebase.database().ref("/sorted/"+ date)
+            query.once('value').then(function(snapshot) {
+              updateTable(snapshot.val())
+              loadEl.style.display = "none";
+            }) 
+          }
+             
+        } catch (e) {
+          console.error(e);
+          loadEl.textContent = 'Error loading the Schedule.';
+        }
+      });
+      updateHeader()
+    </script>
+    
+  </body>
+</html>
+ 

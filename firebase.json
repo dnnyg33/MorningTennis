@@ -1,0 +1,37 @@
+{
+  "functions": {
+    "predeploy": [
+    ],
+    "source": "functions"
+  },
+  "hosting": {
+    "site": "morning-tennis",
+    "public": "schedule",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/schedule/index.html"
+      }
+    ]
+  },
+  "emulators": {
+    "functions": {
+      "port": 5001
+    },
+    "database": {
+      "port": 9000
+    },
+    "hosting": {
+      "port": 5000,
+      "host": "0.0.0.0"
+    },
+    "ui": {
+      "enabled": true
+    }
+  }
+}
