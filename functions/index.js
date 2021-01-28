@@ -33,11 +33,12 @@ function tennisSort(data) {
     var playerCount = 0
     for (const [key, item] of Object.entries(data)) {
         playerCount ++
-        sorted1.push({"day": item.firstChoice, "name": item.name + " (1)", "phoneNumber": item.phoneNumber});
-        sorted2.unshift({"day": item.secondChoice, "name": item.name + " (2)",  "phoneNumber": item.phoneNumber})
-        sorted3.push({"day": item.thirdChoice, "name": item.name + " (3)", "phoneNumber": item.phoneNumber})
-        sorted4.unshift({"day": item.fourthChoice, "name": item.name + " (4)", "phoneNumber": item.phoneNumber})
-        sorted5.push({"day": item.fifthChoice, "name": item.name + " (5)", "phoneNumber": item.phoneNumber})
+        // sorted1.push(buildSortedObjectFull(item, 1))
+        sorted1.push({"day": item.firstChoice, "name": item.name + " (1)", "phoneNumber": item?.phoneNumber ?? "Unknown"});
+        sorted2.unshift({"day": item.secondChoice, "name": item.name + " (2)",  "phoneNumber": item?.phoneNumber ?? "Unknown"})
+        sorted3.push({"day": item.thirdChoice, "name": item.name + " (3)", "phoneNumber": item?.phoneNumber ?? "Unknown"})
+        sorted4.unshift({"day": item.fourthChoice, "name": item.name + " (4)", "phoneNumber": item?.phoneNumber ?? "Unknown"})
+        sorted5.push({"day": item.fifthChoice, "name": item.name + " (5)", "phoneNumber": item?.phoneNumber ?? "Unknown"})
     }
 
     let sortedList = [].concat(sorted1, sorted2, sorted3, sorted4, sorted5)
@@ -74,7 +75,9 @@ function tennisSort(data) {
         "Friday": friday
     }
 }
-
+function buildSortedObjectFull(item, index) {
+    return {"day": item.firstChoice, "name": item.name + " (1)", "phoneNumber": item?.phoneNumber ?? "Unknown"}
+}
 function buildSortedObject(pair) {
     return {"name": pair.name, "phoneNumber": pair.phoneNumber}
 }

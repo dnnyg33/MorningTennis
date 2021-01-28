@@ -34,14 +34,13 @@ function createDay2(list, day, table) {
             div.classList.add("tooltip")
             let tooltipSpan = document.createElement("span")
             tooltipSpan.classList.add("tooltiptext")
-            tooltipSpan.innerHTML = "5412078581"
+            tooltipSpan.innerHTML = item.phoneNumber
             div.appendChild(tooltipSpan)
-            let text = document.createTextNode(parseName(item))
+            let text = document.createTextNode(parseName(item.name))
             div.appendChild(text)
             dayDiv.appendChild(div)
         })
     }
-
 }
 
 function parseName(item) {
