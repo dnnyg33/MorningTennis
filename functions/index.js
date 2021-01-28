@@ -33,11 +33,11 @@ function tennisSort(data) {
     var playerCount = 0
     for (const [key, item] of Object.entries(data)) {
         playerCount ++
-        sorted1.push({"day": item.firstChoice, "name": item.name + " (1)" });
-        sorted2.unshift({"day": item.secondChoice, "name": item.name + " (2)"})
-        sorted3.push({"day": item.thirdChoice, "name": item.name + " (3)"})
-        sorted4.unshift({"day": item.fourthChoice, "name": item.name + " (4)"})
-        sorted5.push({"day": item.fifthChoice, "name": item.name + " (5)"})
+        sorted1.push({"day": item.firstChoice, "name": item.name + " (1)", "phoneNumber": item.phoneNumber});
+        sorted2.unshift({"day": item.secondChoice, "name": item.name + " (2)",  "phoneNumber": item.phoneNumber})
+        sorted3.push({"day": item.thirdChoice, "name": item.name + " (3)", "phoneNumber": item.phoneNumber})
+        sorted4.unshift({"day": item.fourthChoice, "name": item.name + " (4)", "phoneNumber": item.phoneNumber})
+        sorted5.push({"day": item.fifthChoice, "name": item.name + " (5)", "phoneNumber": item.phoneNumber})
     }
 
     let sortedList = [].concat(sorted1, sorted2, sorted3, sorted4, sorted5)
@@ -51,15 +51,15 @@ function tennisSort(data) {
     sortedList.forEach( pair => {
 
         if (pair.day == "Monday") {
-            monday.push(pair.name)
+            monday.push(buildSortedObject(pair))
         } else if (pair.day == "Tuesday") {
-            tuesday.push(pair.name)
+            tuesday.push(buildSortedObject(pair))
         }else if (pair.day == "Wednesday") {
-            wednesday.push(pair.name)
+            wednesday.push(buildSortedObject(pair))
         } else if (pair.day == "Thursday") {
-            thursday.push(pair.name)
+            thursday.push(buildSortedObject(pair))
         } else if (pair.day == "Friday") {
-            friday.push(pair.name)
+            friday.push(buildSortedObject(pair))
         } else {
             //skip
         }
@@ -73,4 +73,8 @@ function tennisSort(data) {
         "Thursday": thursday,
         "Friday": friday
     }
+}
+
+function buildSortedObject(pair) {
+    return {"name": pair.name, "phoneNumber": pair.phoneNumber}
 }
