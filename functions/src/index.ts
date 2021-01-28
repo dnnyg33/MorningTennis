@@ -1,12 +1,17 @@
-const functions = require("firebase-functions");
+import * as functions from "firebase-functions";
+
+import { EventContext } from "firebase-functions/lib/cloud-functions";
+import { DataSnapshot } from "firebase-functions/lib/providers/database";
+
+// const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 admin.initializeApp()
 // // Create and Deploy Your First Cloud Functions
 // // https://firebase.google.com/docs/functions/write-firebase-functions
 //
-exports.sortWeek2 = functions.database.ref("/incoming/{day}").onWrite((snapshot, context) =>
+exports.sortWeek2 = functions.database.ref("/incoming/{day}").onWrite((snapshot: DataSnapshot, context: EventContext) =>
 {
-    const original = snapshot.after.val()
+    const original = snapshot.val()
     console.log("original: " + JSON.stringify(original))
     var key = context.params.day
     // var key = Object.keys(original)[0]
@@ -22,6 +27,7 @@ exports.sortWeek2 = functions.database.ref("/incoming/{day}").onWrite((snapshot,
     //     return null
     // }
 });
+
 
 function tennisSort(data) {
     let sorted1 = []
