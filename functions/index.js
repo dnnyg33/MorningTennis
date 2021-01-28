@@ -9,18 +9,11 @@ exports.sortWeek2 = functions.database.ref("/incoming/{day}").onWrite((snapshot,
     const original = snapshot.after.val()
     console.log("original: " + JSON.stringify(original))
     var key = context.params.day
-    // var key = Object.keys(original)[0]
     console.log("Key: " + key)
-    // console.log("original["+key+"]: " + JSON.stringify(original[key]))
-
-    // if (snapshot.after._path === '/incoming') {
         
     var groups = tennisSort(original)
     console.log("groups: " + JSON.stringify(groups))
     return admin.database().ref("/sorted").child(key).set(groups)
-    // } else {
-    //     return null
-    // }
 });
 
 function tennisSort(data) {
@@ -33,12 +26,11 @@ function tennisSort(data) {
     var playerCount = 0
     for (const [key, item] of Object.entries(data)) {
         playerCount ++
-        // sorted1.push(buildSortedObjectFull(item, 1))
-        sorted1.push({"day": item.firstChoice, "name": item.name + " (1)", "phoneNumber": item?.phoneNumber ?? "Unknown"});
-        sorted2.unshift({"day": item.secondChoice, "name": item.name + " (2)",  "phoneNumber": item?.phoneNumber ?? "Unknown"})
-        sorted3.push({"day": item.thirdChoice, "name": item.name + " (3)", "phoneNumber": item?.phoneNumber ?? "Unknown"})
-        sorted4.unshift({"day": item.fourthChoice, "name": item.name + " (4)", "phoneNumber": item?.phoneNumber ?? "Unknown"})
-        sorted5.push({"day": item.fifthChoice, "name": item.name + " (5)", "phoneNumber": item?.phoneNumber ?? "Unknown"})
+        sorted1.push(buildSortedObjectFull(item.firstChoice, item, 1))
+        sorted2.unshift(buildSortedObjectFull(item.secondChoice, item, 2))
+        sorted3.push(buildSortedObjectFull(item.thirdChoice, item, 3))
+        sorted4.unshift(buildSortedObjectFull(item.fourthChoice, item, 4))
+        sorted5.push(buildSortedObjectFull(item.fifthChoice, item, 5))
     }
 
     let sortedList = [].concat(sorted1, sorted2, sorted3, sorted4, sorted5)
@@ -75,8 +67,12 @@ function tennisSort(data) {
         "Friday": friday
     }
 }
-function buildSortedObjectFull(item, index) {
-    return {"day": item.firstChoice, "name": item.name + " (1)", "phoneNumber": item?.phoneNumber ?? "Unknown"}
+function buildSortedObjectFull(day, item, choice) {
+    var phoneNumber = "Unknown"
+    if (item.phoneNumber != undefined) {
+        phoneNumber = item.phoneNumber 
+    } 
+    return {"day": day, "name": item.name + " ("+ choice+")", "phoneNumber": phoneNumber}
 }
 function buildSortedObject(pair) {
     return {"name": pair.name, "phoneNumber": pair.phoneNumber}
