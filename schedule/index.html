@@ -113,15 +113,17 @@
           
           var date = new URLSearchParams(window.location.search).get("date")
           if (date == undefined) {
-            loadEl.style.display = "none";
+            //todo get latest date
+            var query = firebase.database().ref("/sorted")
+            query.once('value').then(function (snapshot) {
+              let list = Object.entries(snapshot.val())
+              let latest = list.sort((a, b) => parseDate(b[0]) - parseDate(a[0]))[0][0]
+              loadSchedule(latest, loadEl, firebase)
+            })
+
           } else {
             loadEl.style.display = "block";
-            document.getElementById("cal").style.display = "none";
-            var query = firebase.database().ref("/sorted/"+ date)
-            query.once('value').then(function(snapshot) {
-              updateTable(snapshot.val())
-              loadEl.style.display = "none";
-            }) 
+            loadSchedule(date, loadEl, firebase)
           }
              
         } catch (e) {
@@ -129,7 +131,6 @@
           loadEl.textContent = 'Error loading the Schedule.';
         }
       });
-      updateHeader()
     </script>
     
   </body>

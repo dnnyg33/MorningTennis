@@ -16,8 +16,8 @@ function updateTable(sortedObject) {
 }
 
 function createDay2(list, day, table) {
-    
-    var dayDiv  = document.createElement("div")
+
+    var dayDiv = document.createElement("div")
     dayDiv.classList.add("day")
     dayDiv.innerHTML = day
     table.appendChild(dayDiv)
@@ -34,14 +34,13 @@ function createDay2(list, day, table) {
             div.classList.add("tooltip")
             let tooltipSpan = document.createElement("span")
             tooltipSpan.classList.add("tooltiptext")
-            tooltipSpan.innerHTML = "5412078581"
+            tooltipSpan.innerHTML = item.phoneNumber
             div.appendChild(tooltipSpan)
-            let text = document.createTextNode(parseName(item))
+            let text = document.createTextNode(parseName(item.name))
             div.appendChild(text)
             dayDiv.appendChild(div)
         })
     }
-
 }
 
 function parseName(item) {
@@ -49,7 +48,7 @@ function parseName(item) {
     if (parts.length == 2) {
         return item
     } else {
-        return parts[0] + " " + parts[1].substring(0,1) + " " + parts[2]
+        return parts[0] + " " + parts[1].substring(0, 1) + " " + parts[2]
     }
 }
 
@@ -63,57 +62,71 @@ function createDay(list, day, table) {
     console.log(list)
     var counter = 0
     if (list != undefined) {
-    list.forEach(item => {
-        counter++
-        let th = document.createElement("td");
-        if (counter <= 4) {
-            th.classList.add("player")
-        } else {
-            th.classList.add("alternate")
-        }
-        let text = document.createTextNode(item);
-        th.appendChild(text);
-        row.appendChild(th);
+        list.forEach(item => {
+            counter++
+            let th = document.createElement("td");
+            if (counter <= 4) {
+                th.classList.add("player")
+            } else {
+                th.classList.add("alternate")
+            }
+            let text = document.createTextNode(item);
+            th.appendChild(text);
+            row.appendChild(th);
+        })
+    }
+}
+
+function updateHeader(date) {
+    // if (date == undefined) {
+    //     document.getElementById("header").innerHTML = "Pick a date to see the schedule"
+    //     instance = new dtsel.DTS('input[name="dateTimePicker"]', {
+    //         showDate: true,
+    //         showTime: false,
+    //         dateFormat: "dddd-mm-dd-yyyy"
+    //     });
+
+    // } else {
+    document.getElementById("header").innerHTML = "Morning Tennis Schedule for week starting " + date
+    // }
+
+}
+
+function loadSchedule(date, loadEl, firebase) {
+    document.getElementById("cal").style.display = "none";
+    var query = firebase.database().ref("/sorted/" + date)
+    query.once('value').then(function (snapshot) {
+        updateTable(snapshot.val())
+        loadEl.style.display = "none";
+
+        updateHeader(date)
     })
 }
+
+function parseDate(mondayName) {
+    let str = mondayName.substring(7)
+    return new Date(str)
 }
-
-function updateHeader() {
-    var date = new URLSearchParams(window.location.search).get("date")
-    if (date == undefined) {
-        document.getElementById("header").innerHTML = "Pick a date to see the schedule"
-        instance = new dtsel.DTS('input[name="dateTimePicker"]', {
-            showDate: true,
-            showTime: false,
-            dateFormat: "dddd-mm-dd-yyyy"
-        });
-
-    } else {
-        document.getElementById("header").innerHTML = "Morning Tennis Schedule for week starting "+ date
-    }
-    
-}
-
 
 
 // Checks that the Firebase SDK has been correctly setup and configured.
 function checkSetup() {
     if (!window.firebase || !(firebase.app instanceof Function) || !firebase.app().options) {
-      window.alert('You have not configured and imported the Firebase SDK. ' +
-          'Make sure you go through the codelab setup instructions and make ' +
-          'sure you are running the codelab using `firebase serve`');
+        window.alert('You have not configured and imported the Firebase SDK. ' +
+            'Make sure you go through the codelab setup instructions and make ' +
+            'sure you are running the codelab using `firebase serve`');
     }
-  }
-  
-  // Checks that Firebase has been imported.
+}
+
+// Checks that Firebase has been imported.
 //   checkSetup();
 
-  // We load currently existing chat messages and listen to new ones.
+// We load currently existing chat messages and listen to new ones.
 // loadSchedule();
 
 function test() {
     var output = ""
-    for (let i = str.length -1; i <=0; i--) {
+    for (let i = str.length - 1; i <= 0; i--) {
         output += str[i]
     }
     return output;
