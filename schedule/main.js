@@ -93,7 +93,6 @@ function updateHeader(date) {
 }
 
 function loadSchedule(date, loadEl, firebase) {
-    document.getElementById("cal").style.display = "none";
     var query = firebase.database().ref("/sorted/" + date)
     query.once('value').then(function (snapshot) {
         updateTable(snapshot.val())

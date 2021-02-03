@@ -17,8 +17,6 @@
     <script defer src="/__/firebase/8.2.3/firebase-analytics.js"></script>
     <script defer src="/__/firebase/8.2.3/firebase-remote-config.js"></script>
     <script defer src="/__/firebase/8.2.3/firebase-performance.js"></script>
-    <link rel="stylesheet" href="dtsel.css" />
-    <script src="dtsel.js"></script>
     <!-- 
       initialize the SDK after all desired features are loaded, set useEmulator to false
       to avoid connecting the SDK to running emulators.
@@ -47,18 +45,24 @@
       <p>If you don't see your name and want to play, click the button below to submit your preferred availabilty. </p>
       
       <p id="load">Schedule Loading&hellip;</p>
-      <input id="cal" name="dateTimePicker" />
       <div id="table" class="flex-container">
       </div>
     <div></div>
+    <p></p>
       <h2>First 4 are players. Others listed are alternates by order.</h2>
       <div>
         <p id="playerCount"></p>
       </div>
       <a target="_blank" href="https://docs.google.com/forms/d/e/1FAIpQLSc3pgU5-X2NASXp2mkisZ2vQ1Qw0KnGxMhtXD1PRMrLBg0O-Q/viewform?usp=sf_link">Submit availabilty</a>
       <h3>FAQ</h3>
+      <h4>
+        What if someone scheduled can't make it or doesn't show?
+      </h4>
+      <p class="tiny">If one of the 4 can no longer come, please contact one of the alternates to play. You can find phone numbers by hovering over or clicking on names</p>
       <h4>What if i don't see my name after completing the form?</h4>
       <p class="tiny">Sometimes the schedule doesn't update right away, but as long as you complete the form your info and spot will be saved. If after an hour, it still doesn't update, let me know and I will fix it.</p>
+      <h4>Why are there numbers next to everyone's name?</h4>
+      <p class="tiny">The number next to a name indicates the preference for that choice. Ideally everyone is playing on their most preferred days so all <i>players</i> would have 1's and 2's, but it depends on how many people sign up and if there is variety on which days are preferred.</p>
       <h4>When does the schedule "lock"?</h4>
       <p class="tiny">The cutoff for submitting your playing days is <b>6pm</b> 
         on the Sunday night before. 
