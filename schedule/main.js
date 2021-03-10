@@ -26,6 +26,8 @@ function createDay2(list, day, table) {
         list.forEach(item => {
             counter++
             let div = document.createElement("div")
+            // let div = document.createElement("a")
+            // div.setAttribute("href", item.phoneNumber)
             if (counter <= 4) {
                 div.classList.add("player")
             } else {
@@ -44,7 +46,7 @@ function createDay2(list, day, table) {
 }
 
 function parseName(item) {
-    let parts = item.split(" ")
+    let parts = item.trim().split(" ")
     if (parts.length == 2) {
         return item
     } else {
@@ -97,10 +99,53 @@ function loadSchedule(date, loadEl, firebase) {
     query.once('value').then(function (snapshot) {
         updateTable(snapshot.val())
         loadEl.style.display = "none";
-
         updateHeader(date)
     })
+    fetchHistoryLinks(firebase)
 }
+
+function fetchHistoryLinks(firebase) {
+    var query = firebase.database().ref("/sorted/")
+    query.once('value').then(function (snapshot) {
+        loadHistoryLink(snapshot.val())
+
+    })
+}
+function loadHistoryLink(weeks) {
+    var back = ""
+    var forward = ""
+    const list = Object.keys(weeks)
+    list.sort(function(a, b) {
+        return parseDate(a) - parseDate(b)
+    })
+    let lastEntry = list[list.length - 1]
+    console.log(list)
+    console.log(parseDate(lastEntry))
+    // if (today > parseDate(lastEntry)) {
+
+    forward = lastEntry
+    back = list[list.length - 2]
+    // } else {
+    // back = lastEntry
+    // }
+
+    document.getElementById("historicalLinks").innerHTML = "Looking for a different week? "
+    let backButton = document.getElementById("backwardButton")
+    backButton.innerHTML = back
+    backButton.addEventListener("click", function() {reloadDate(back) })
+    let forwardButton =  document.getElementById("forwardButton")
+    forwardButton.innerHTML = forward
+    forwardButton.addEventListener("click", function() {
+        reloadDate(forward)
+    })
+}
+
+function reloadDate(param) {
+    let url = window.location.protocol + "//" + location.host + "/?date=" + param
+    console.log(url)
+    window.location.href = url
+}
+
 
 function parseDate(mondayName) {
     let str = mondayName.substring(7)

@@ -17,14 +17,17 @@ exports.sortWeek2 = functions.database.ref("/incoming/{day}").onWrite((snapshot,
 });
 
 function tennisSort(data) {
+    console.log("Data: " + JSON.stringify(data))
+    let uniqueData = removeDuplicates(data)
     let sorted1 = []
     let sorted2 = []
     let sorted3 = []
     let sorted4 = []
     let sorted5 = []
-    console.log("Data: " + JSON.stringify(data))
+    
     var playerCount = 0
-    for (const [key, item] of Object.entries(data)) {
+
+    for (const [key, item] of Object.entries(uniqueData)) {
         playerCount ++
         sorted1.push(buildSortedObjectFull(item.firstChoice, item, 1))
         sorted2.unshift(buildSortedObjectFull(item.secondChoice, item, 2))
@@ -67,6 +70,23 @@ function tennisSort(data) {
         "Friday": friday
     }
 }
+
+function removeDuplicates(data) {
+    console.log(data)
+    var phoneNumbers = []
+    var uniquePlayers = []
+    //iterate through data 
+    for (const [key, item] of Object.entries(data)) {
+        if (phoneNumbers.includes(item.phoneNumber) == false) {
+            phoneNumbers.push(item.phoneNumber)
+            uniquePlayers.push(item)
+        }
+    }
+    return uniquePlayers
+}
+
+
+
 function buildSortedObjectFull(day, item, choice) {
     var phoneNumber = "Unknown"
     if (item.phoneNumber != undefined) {
