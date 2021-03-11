@@ -17,8 +17,6 @@
     <script defer src="/__/firebase/8.2.3/firebase-analytics.js"></script>
     <script defer src="/__/firebase/8.2.3/firebase-remote-config.js"></script>
     <script defer src="/__/firebase/8.2.3/firebase-performance.js"></script>
-    <link rel="stylesheet" href="dtsel.css" />
-    <script src="dtsel.js"></script>
     <!-- 
       initialize the SDK after all desired features are loaded, set useEmulator to false
       to avoid connecting the SDK to running emulators.
@@ -44,21 +42,33 @@
     <div id="message">
       <h2>Welcome</h2>
       <h1 id="header"></h1>
-      <p>If you don't see your name and want to play, click the button below to submit your preferred availabilty. </p>
+      <div >
+      <h2 id="historicalLinks"></h2>
+      <button id="backwardButton"></button>
+      <button id="forwardButton"></button>
+    </div>
+      <p id="subtitleDirection">If you don't see your name and want to play, click the button below to submit your preferred availabilty. </p>
       
       <p id="load">Schedule Loading&hellip;</p>
-      <input id="cal" name="dateTimePicker" />
       <div id="table" class="flex-container">
       </div>
     <div></div>
+    <p></p>
       <h2>First 4 are players. Others listed are alternates by order.</h2>
       <div>
         <p id="playerCount"></p>
       </div>
-      <a target="_blank" href="https://docs.google.com/forms/d/e/1FAIpQLSc3pgU5-X2NASXp2mkisZ2vQ1Qw0KnGxMhtXD1PRMrLBg0O-Q/viewform?usp=sf_link">Submit availabilty</a>
+      <a target="_blank" id="submitAvailability" href="https://docs.google.com/forms/d/e/1FAIpQLSc3pgU5-X2NASXp2mkisZ2vQ1Qw0KnGxMhtXD1PRMrLBg0O-Q/viewform?usp=sf_link">Submit availabilty</a>
+      <div id="accordion">
       <h3>FAQ</h3>
+      <h4>
+        What if I can't make it anymore?
+      </h4>
+      <p class="tiny">If you or one of the scheduled 4 can no longer come, please contact one of the alternates to play. You can find phone numbers by hovering over or clicking on names</p>
       <h4>What if i don't see my name after completing the form?</h4>
       <p class="tiny">Sometimes the schedule doesn't update right away, but as long as you complete the form your info and spot will be saved. If after an hour, it still doesn't update, let me know and I will fix it.</p>
+      <h4>Why are there numbers next to everyone's name?</h4>
+      <p class="tiny">The number next to a name indicates the preference for that choice. Ideally everyone is playing on their most preferred days so all <i>players</i> would have 1's and 2's, but it depends on how many people sign up and if there is variety on which days are preferred.</p>
       <h4>When does the schedule "lock"?</h4>
       <p class="tiny">The cutoff for submitting your playing days is <b>6pm</b> 
         on the Sunday night before. 
@@ -72,7 +82,7 @@
         priority in reverse order. So now Alice would get first pick for Tuesday,
          then Bob for Tuesday. Finally Bob would then also get Monday. If you've ever played
         Settlers of Catan, it's the same picking algorithm for placing inital settlements.</p>
-    
+      </div>
     
   </div>
   
@@ -113,15 +123,17 @@
           
           var date = new URLSearchParams(window.location.search).get("date")
           if (date == undefined) {
-            loadEl.style.display = "none";
+            //todo get latest date
+            var query = firebase.database().ref("/sorted")
+            query.once('value').then(function (snapshot) {
+              let list = Object.entries(snapshot.val())
+              let latest = list.sort((a, b) => parseDate(b[0]) - parseDate(a[0]))[0][0]
+              loadSchedule(latest, loadEl, firebase)
+            })
+
           } else {
             loadEl.style.display = "block";
-            document.getElementById("cal").style.display = "none";
-            var query = firebase.database().ref("/sorted/"+ date)
-            query.once('value').then(function(snapshot) {
-              updateTable(snapshot.val())
-              loadEl.style.display = "none";
-            }) 
+            loadSchedule(date, loadEl, firebase)
           }
              
         } catch (e) {
@@ -129,7 +141,6 @@
           loadEl.textContent = 'Error loading the Schedule.';
         }
       });
-      updateHeader()
     </script>
     
   </body>
