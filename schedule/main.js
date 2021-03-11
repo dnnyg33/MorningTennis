@@ -80,17 +80,14 @@ function createDay(list, day, table) {
 }
 
 function updateHeader(date) {
-    // if (date == undefined) {
-    //     document.getElementById("header").innerHTML = "Pick a date to see the schedule"
-    //     instance = new dtsel.DTS('input[name="dateTimePicker"]', {
-    //         showDate: true,
-    //         showTime: false,
-    //         dateFormat: "dddd-mm-dd-yyyy"
-    //     });
-
-    // } else {
+    if (parseDate(date) < new Date()) {
+        document.getElementById("submitAvailability").classList.add("isDisabled")
+        document.getElementById("subtitleDirection").innerHTML = "The schedule for this week is locked."
+    } else {
+        document.getElementById("submitAvailability").classList.remove("isDisabled")
+    
+    }
     document.getElementById("header").innerHTML = "Morning Tennis Schedule for week starting " + date
-    // }
 
 }
 

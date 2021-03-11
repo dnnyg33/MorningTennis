@@ -7,17 +7,13 @@ admin.initializeApp()
 exports.sortWeek2 = functions.database.ref("/incoming/{day}").onWrite((snapshot, context) =>
 {
     const original = snapshot.after.val()
-    console.log("original: " + JSON.stringify(original))
     var key = context.params.day
-    console.log("Key: " + key)
         
     var groups = tennisSort(original)
-    console.log("groups: " + JSON.stringify(groups))
     return admin.database().ref("/sorted").child(key).set(groups)
 });
 
 function tennisSort(data) {
-    console.log("Data: " + JSON.stringify(data))
     let uniqueData = removeDuplicates(data)
     let sorted1 = []
     let sorted2 = []
@@ -72,15 +68,21 @@ function tennisSort(data) {
 }
 
 function removeDuplicates(data) {
-    console.log(data)
     var phoneNumbers = []
     var uniquePlayers = []
     //iterate through data 
     for (const [key, item] of Object.entries(data)) {
-        if (phoneNumbers.includes(item.phoneNumber) == false) {
-            phoneNumbers.push(item.phoneNumber)
-            uniquePlayers.push(item)
+        let cleanNumber = item.phoneNumber.toString().replace(/\D/g,'')
+        if (phoneNumbers.includes(cleanNumber)) {
+            console.log("phone numbers includes: " + cleanNumber)
+            uniquePlayers = uniquePlayers.filter(f => cleanNumber !== f.phoneNumber.toString().replace(/\D/g,''))
+
+        console.log("uniquePlayers" + JSON.stringify(uniquePlayers))
         }
+            phoneNumbers.push(cleanNumber)
+            uniquePlayers.push(item)
+        
+        
     }
     return uniquePlayers
 }

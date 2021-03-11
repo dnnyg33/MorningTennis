@@ -96,3 +96,7 @@ h3 {
   #accordion { 
     padding: 5px;
 }
+
+.isDisabled {
+  visibility:collapse;
+}
