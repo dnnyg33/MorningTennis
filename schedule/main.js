@@ -1,5 +1,4 @@
-function updateTable(sortedObject) {
-    console.log(sortedObject)
+function updateTable(sortedObject, locked) {
     // var table = document.querySelector("table")
     // let thead = table.createTHead();
     var table = document.getElementById("table")
@@ -12,7 +11,11 @@ function updateTable(sortedObject) {
     createDay2(sortedObject.Friday, "Friday", table)
 
     var playerCountLabel = document.getElementById("playerCount")
-    playerCountLabel.innerHTML = sortedObject.playerCount + " players scheduled so far."
+    if (locked) {
+        playerCountLabel.innerHTML = sortedObject.playerCount + " players scheduled."
+    } else {
+        playerCountLabel.innerHTML = sortedObject.playerCount + " players scheduled so far."
+    }
 }
 
 function createDay2(list, day, table) {
@@ -46,6 +49,7 @@ function createDay2(list, day, table) {
 }
 
 function parseName(item) {
+    console.log(item + ".")
     let parts = item.trim().split(" ")
     if (parts.length == 2) {
         return item
@@ -61,7 +65,6 @@ function createDay(list, day, table) {
     let headerText = document.createTextNode(day)
     header.appendChild(headerText)
     row.appendChild(header)
-    console.log(list)
     var counter = 0
     if (list != undefined) {
         list.forEach(item => {
@@ -79,12 +82,12 @@ function createDay(list, day, table) {
     }
 }
 
-function updateHeader(date) {
-    if (parseDate(date) < new Date()) {
-        document.getElementById("submitAvailability").classList.add("isDisabled")
+function updateHeader(date, locked) {
+    if (locked) {
+        document.getElementById("submitAvailability").innerHTML = "Submit availability for <i>next</i>&nbsp week"
         document.getElementById("subtitleDirection").innerHTML = "The schedule for this week is locked."
     } else {
-        document.getElementById("submitAvailability").classList.remove("isDisabled")
+        document.getElementById("submitAvailability").innerHTML = "Submit"
     
     }
     document.getElementById("header").innerHTML = "Morning Tennis Schedule for week starting " + date
@@ -94,9 +97,10 @@ function updateHeader(date) {
 function loadSchedule(date, loadEl, firebase) {
     var query = firebase.database().ref("/sorted/" + date)
     query.once('value').then(function (snapshot) {
-        updateTable(snapshot.val())
+        let locked = parseDate(date) < new Date()
+        updateTable(snapshot.val(), locked)
         loadEl.style.display = "none";
-        updateHeader(date)
+        updateHeader(date, locked)
     })
     fetchHistoryLinks(firebase)
 }
@@ -116,8 +120,6 @@ function loadHistoryLink(weeks) {
         return parseDate(a) - parseDate(b)
     })
     let lastEntry = list[list.length - 1]
-    console.log(list)
-    console.log(parseDate(lastEntry))
     // if (today > parseDate(lastEntry)) {
 
     forward = lastEntry
@@ -139,7 +141,6 @@ function loadHistoryLink(weeks) {
 
 function reloadDate(param) {
     let url = window.location.protocol + "//" + location.host + "/?date=" + param
-    console.log(url)
     window.location.href = url
 }
 
