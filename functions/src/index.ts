@@ -46,20 +46,35 @@ function tennisSort(data) {
     let thursday = []
     let friday = []
 
-    sortedList.forEach( pair => {
+    sortedList.forEach( playerPreference => {
+        let person = uniqueData.find(x => x.phoneNumber == playerPreference.phoneNumber)
+        let hasReachedMaxDays = person.maxDays == person.scheduledDays
+        if (hasReachedMaxDays) {
+            console.log("skipping " + person.name + " who is already scheduled for " + person.scheduledDays + " days")
+            return
+        }
 
-        if (pair.day == "Monday") {
-            monday.push(buildSortedObject(pair))
-        } else if (pair.day == "Tuesday") {
-            tuesday.push(buildSortedObject(pair))
-        }else if (pair.day == "Wednesday") {
-            wednesday.push(buildSortedObject(pair))
-        } else if (pair.day == "Thursday") {
-            thursday.push(buildSortedObject(pair))
-        } else if (pair.day == "Friday") {
-            friday.push(buildSortedObject(pair))
+        let addedAsAlternate = false
+        if (playerPreference.day == "Monday") {
+            monday.push(buildSortedObject(playerPreference))
+            addedAsAlternate = monday.length > 4
+        } else if (playerPreference.day == "Tuesday") {
+            tuesday.push(buildSortedObject(playerPreference))
+            addedAsAlternate = tuesday.length > 4
+        }else if (playerPreference.day == "Wednesday") {
+            wednesday.push(buildSortedObject(playerPreference))
+            addedAsAlternate = wednesday.length > 4
+        } else if (playerPreference.day == "Thursday") {
+            thursday.push(buildSortedObject(playerPreference))
+            addedAsAlternate = thursday.length > 4
+        } else if (playerPreference.day == "Friday") {
+            friday.push(buildSortedObject(playerPreference))
+            addedAsAlternate = friday.length > 4
         } else {
             //skip
+        }
+        if (!hasReachedMaxDays && !addedAsAlternate) {
+            person.scheduledDays++
         }
     })
 
@@ -85,6 +100,7 @@ function removeDuplicates(data) {
 
         console.log("uniquePlayers" + JSON.stringify(uniquePlayers))
         }
+        item.scheduledDays = 0
             phoneNumbers.push(cleanNumber)
             uniquePlayers.push(item)
         
