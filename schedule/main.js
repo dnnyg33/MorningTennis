@@ -49,7 +49,6 @@ function createDay2(list, day, table) {
 }
 
 function parseName(item) {
-    console.log(item + ".")
     let parts = item.trim().split(" ")
     if (parts.length == 2) {
         return item
