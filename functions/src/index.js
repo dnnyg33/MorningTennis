@@ -4,56 +4,112 @@ admin.initializeApp()
 // // Create and Deploy Your First Cloud Functions
 // // https://firebase.google.com/docs/functions/write-firebase-functions
 //
-exports.sortWeek = functions.database.ref("/incoming/{day}").onWrite((snapshot, context) =>
-{
-    const original = snapshot.after.val()
-    var key = context.params.day
-        
-    var groups = tennisSort(original)
-    return admin.database().ref("/sorted").child(key).set(groups)
+exports.sortWeek = functions.database.ref("/incoming/{day}").onWrite((snapshot, context) => {
+    return runSort(snapshot, "/sorted", context.params.day);
 });
 
-exports.sortWeekv2 = functions.database.ref("/incoming-v2/{day}").onWrite((snapshot, context) =>
-{
-    const original = snapshot.after.val()
-    var key = context.params.day
-        
-    var groups = tennisSort(original)
-    return admin.database().ref("/sorted-v2").child(key).set(groups)
+exports.sortWeekv2 = functions.database.ref("/incoming-v2/{day}").onWrite((snapshot, context) => {
+    return runSort(snapshot, "/sorted-v2", context.params.day);
 });
+
+function runSort(snapshot, location, key) {
+    const original = snapshot.after.val()
+
+    var groups = tennisSort(original)
+    return admin.database().ref(location).child(key).set(groups)
+}
+
+exports.test = functions.https.onRequest((req, res) => {
+    getNotificationGroup(["5412078586"]).then(registrationTokens => {
+        const message = {
+            "notification": {
+                "title": "Schedule closing",
+                "body": "The schedule for this week is about to close. Please submit or make any changes before 8pm."
+            },
+            "tokens": registrationTokens,
+        };
+        sendNotificationsToGroup(message, registrationTokens, res)
+    })
+
+})
+
+exports.scheduleReminderNotification = functions.pubsub.schedule('0 20 * * MON-FRI')
+    .timeZone('America/Denver')
+    .onRun((context) => {
+        //get date
+        const date = Date.now()
+
+        //get players tomorrow
+        //get notification tokens
+        //send notification
+    })
+
+exports.scheduleClosingNotification = functions.pubsub.schedule('00 19 * * SUN')
+    .timeZone('America/Denver')
+    .onRun((req, res) => {
+        getNotificationGroup().then(registrationTokens => {
+            const message = {
+                "notification": {
+                    "title": "Schedule closing",
+                    "body": "The schedule for this week is about to close. Please submit or make any changes before 8pm."
+                },
+                "tokens": registrationTokens,
+            };
+            sendNotificationsToGroup(message, registrationTokens, res)
+        });
+
+    });
+
 
 exports.scheduleOpenNotification = functions.pubsub.schedule('00 8 * * FRI')
-.timeZone('America/Denver')
-.onRun((context) => {
-    //todo read db
-    const registrationTokens = ["e_hniT70Ql-rzt7iUN73kE:APA91bHlfC-s3_RiXrE8iOVOgYSBXMFlT5_5qQ3422_iusXWZUgfnM-1gWrNdOxd9PUXJuyAnncbPJL6yUa6Vwaf8WsiINBNIeTtD8f7pnnOZHHcxnZx9qT-Tf0H79qpYi5HrwCJLC0C"]
-    const message = {
-        "notification": {
-            "title": "Schedule now open",
-            "body": "You can now sign up for next week's schedule in the app."
-        },
-        "tokens": registrationTokens,
-      };
-    sendNotificationsToGroup(message, registrationTokens)
-});
+    .timeZone('America/Denver')
+    .onRun((req, res) => {
+        const registrationTokens = getNotificationGroup();
+        const message = {
+            "notification": {
+                "title": "Schedule now open",
+                "body": "You can now sign up for next week's schedule in the app."
+            },
+            "tokens": registrationTokens,
+        };
+        sendNotificationsToGroup(message, registrationTokens, res)
+    });
+
+function getNotificationGroup(recipients) {
+    return admin.database().ref("approvedNumbers").once('value', (snapshot) => { })
+        .then((snapshot) => {
+            const data = snapshot.val()
+            //flatten users to list of tokens
+            var tokenList = []
+            for (const [userKey, userValue] of Object.entries(data)) {
+                if (recipients === undefined || recipients.includes(userKey)) {
+                    for (const [tokenKey, tokenValue] of Object.entries(userValue.tokens)) {
+                        tokenList.push(tokenValue)
+                    }
+                }
+            }
+            return tokenList;
+        })
+
+}
 
 function sendNotificationsToGroup(message, registrationTokens, res) {
     admin.messaging().sendMulticast(message)
         .then((response) => {
-          if (response.failureCount > 0) {
-            const failedTokens = [];
-            response.responses.forEach((resp, idx) => {
-                console.log(resp)
-              if (!resp.success) {
-                failedTokens.push(registrationTokens[idx]);
-              }
-            });
-            console.log('List of tokens that caused failures: ' + failedTokens);
-            res.end('List of tokens that caused failures: ' + failedTokens)
-          } else {
-              console.log("No errors sending messages")
-              res.end("No errors sending messages")
-          }
+            if (response.failureCount > 0) {
+                const failedTokens = [];
+                response.responses.forEach((resp, idx) => {
+                    console.log(resp)
+                    if (!resp.success) {
+                        failedTokens.push(registrationTokens[idx]);
+                    }
+                });
+                console.log('List of tokens that caused failures: ' + failedTokens);
+                res.end('List of tokens that caused failures: ' + failedTokens)
+            } else {
+                console.log("No errors sending messages")
+                res.end("No errors sending messages")
+            }
         })
 }
 
@@ -64,11 +120,11 @@ function tennisSort(data) {
     let sorted3 = []
     let sorted4 = []
     let sorted5 = []
-    
+
     var playerCount = 0
 
     for (const [key, item] of Object.entries(uniqueData)) {
-        playerCount ++
+        playerCount++
         sorted1.push(buildSortedObjectFull(item.firstChoice, item, 1))
         sorted2.unshift(buildSortedObjectFull(item.secondChoice, item, 2))
         sorted3.push(buildSortedObjectFull(item.thirdChoice, item, 3))
@@ -84,7 +140,7 @@ function tennisSort(data) {
     let thursday = []
     let friday = []
 
-    sortedList.forEach( playerPreference => {
+    sortedList.forEach(playerPreference => {
         let person = uniqueData.find(x => x.phoneNumber == playerPreference.phoneNumber)
         let hasReachedMaxDays = person.maxDays == person.scheduledDays
         if (hasReachedMaxDays) {
@@ -99,7 +155,7 @@ function tennisSort(data) {
         } else if (playerPreference.day == "Tuesday") {
             tuesday.push(buildSortedObject(playerPreference))
             addedAsAlternate = tuesday.length > 4
-        }else if (playerPreference.day == "Wednesday") {
+        } else if (playerPreference.day == "Wednesday") {
             wednesday.push(buildSortedObject(playerPreference))
             addedAsAlternate = wednesday.length > 4
         } else if (playerPreference.day == "Thursday") {
@@ -131,18 +187,18 @@ function removeDuplicates(data) {
     var uniquePlayers = []
     //iterate through data 
     for (const [key, item] of Object.entries(data)) {
-        let cleanNumber = item.phoneNumber.toString().replace(/\D/g,'')
+        let cleanNumber = item.phoneNumber.toString().replace(/\D/g, '')
         if (phoneNumbers.includes(cleanNumber)) {
             console.log("phone numbers includes: " + cleanNumber)
-            uniquePlayers = uniquePlayers.filter(f => cleanNumber !== f.phoneNumber.toString().replace(/\D/g,''))
+            uniquePlayers = uniquePlayers.filter(f => cleanNumber !== f.phoneNumber.toString().replace(/\D/g, ''))
 
-        console.log("uniquePlayers" + JSON.stringify(uniquePlayers))
+            console.log("uniquePlayers" + JSON.stringify(uniquePlayers))
         }
         item.scheduledDays = 0
-            phoneNumbers.push(cleanNumber)
-            uniquePlayers.push(item)
-        
-        
+        phoneNumbers.push(cleanNumber)
+        uniquePlayers.push(item)
+
+
     }
     return uniquePlayers
 }
@@ -152,19 +208,19 @@ function removeDuplicates(data) {
 function buildSortedObjectFull(day, item, choice) {
     var phoneNumber = "Unknown"
     if (item.phoneNumber != undefined) {
-        phoneNumber = item.phoneNumber 
-    } 
+        phoneNumber = item.phoneNumber
+    }
     var hasSunpro = false
     console.log("Item.hasSunpro " + item.sunPro)
     if (item.sunPro === "Yes") {
         hasSunpro = true
     }
-    return {"day": day, "name": item.name + " ("+ choice+")", "phoneNumber": phoneNumber, "hasSunpro": hasSunpro}
+    return { "day": day, "name": item.name + " (" + choice + ")", "phoneNumber": phoneNumber, "hasSunpro": hasSunpro }
 }
 function buildSortedObject(pair) {
     var name = pair.name
     if (pair.hasSunpro) {
         name = "*" + pair.name
     }
-    return {"name": name, "phoneNumber": pair.phoneNumber}
+    return { "name": name, "phoneNumber": pair.phoneNumber }
 }

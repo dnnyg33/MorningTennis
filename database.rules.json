@@ -1,0 +1,30 @@
+{
+  "rules": {
+    "sorted": {
+      ".write": false,
+      ".read": true
+    },
+    "sorted-v2": {
+      ".write": false,
+      ".read": true
+    },
+    "incoming": {
+      ".read": true,
+      ".write": true
+    },
+    "incoming-v2": {
+      "$date": {
+        "$phoneNumber": {
+          ".read": true,
+          ".write": "root.child('approvedNumbers').hasChild(newData.child('phoneNumber').val())"
+        }
+      }
+    },
+    "approvedNumbers": {
+      "$phoneNumber": {
+        ".read": true,
+        ".write": "root.child('approvedNumbers').hasChild($phoneNumber)"
+      }
+    }
+  }
+}
