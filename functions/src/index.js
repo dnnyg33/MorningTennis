@@ -12,6 +12,31 @@ exports.sortWeekv2 = functions.database.ref("/incoming-v2/{day}").onWrite((snaps
     return runSort(snapshot, "/sorted-v2", context.params.day);
 });
 
+exports.test = functions.https.onRequest((req, res) => {
+    run_reminderNotification(res)
+
+})
+
+exports.scheduleReminderNotification = functions.pubsub.schedule('0 17 * * SUN-THU')
+    .timeZone('America/Denver')
+    .onRun((context) => {
+        run_reminderNotification()
+    })
+
+exports.scheduleClosingNotification = functions.pubsub.schedule('00 19 * * SUN')
+    .timeZone('America/Denver')
+    .onRun((req, res) => {
+        run_scheduleNotification(res, "Schedule closing", "The schedule for this week is about to close. Please submit or make any changes before 8pm.")
+
+    });
+
+
+exports.scheduleOpenNotification = functions.pubsub.schedule('00 8 * * FRI')
+    .timeZone('America/Denver')
+    .onRun((req, res) => {
+        run_scheduleNotification(res, "Schedule now open", "You can now sign up for next week's schedule in the app.")
+    });
+
 function runSort(snapshot, location, key) {
     const original = snapshot.after.val()
 
@@ -19,23 +44,38 @@ function runSort(snapshot, location, key) {
     return admin.database().ref(location).child(key).set(groups)
 }
 
-exports.test = functions.https.onRequest((req, res) => {
-    
+function run_scheduleNotification(res, title, body) {
+    getNotificationGroup().then(registrationTokens => {
+        const message = {
+            "notification": {
+                "title": title,
+                "body": body
+            },
+            "tokens": registrationTokens,
+        };
+        sendNotificationsToGroup(message, registrationTokens, res)
+    });
+}
 
-    
-
-})
-
-exports.scheduleReminderNotification = functions.pubsub.schedule('0 20 * * MON-FRI')
-    .timeZone('America/Denver')
-    .onRun((context) => {
-        admin.database().ref(getDBRefOfPlayers()).once('value', (snapshot) => {
+function run_reminderNotification(res) {
+    const dayName = new Date().toLocaleString('en-us', { weekday: 'long' })
+    const playersRef = "sorted/" + getDBRefOfCurrentWeekName() + "/" + dayName
+    const slotsRef = "sorted/" + getDBRefOfCurrentWeekName() + "/slots"
+    admin.database().ref(slotsRef).once('value', (snapshot) => {
+        const limit = snapshot.val()[dayName]
+        admin.database().ref(playersRef).once('value', (snapshot) => {
             const data = snapshot.val()
             var phoneNumbers = []
+            var count = 0
+            
             for (const [userKey, userValue] of Object.entries(data)) {
-                phoneNumbers.push(userValue.phoneNumber)
+                if (count == limit) break;
+                count++
+                let cleanNumber = userValue.phoneNumber.toString().replace(/\D/g, '')
+                phoneNumbers.push(cleanNumber.toString())
             }
-                
+            console.log(phoneNumbers)
+
             getNotificationGroup(phoneNumbers).then(registrationTokens => {
                 const message = {
                     "notification": {
@@ -47,43 +87,14 @@ exports.scheduleReminderNotification = functions.pubsub.schedule('0 20 * * MON-F
                 sendNotificationsToGroup(message, registrationTokens, res)
             })
         })
-    })
-
-exports.scheduleClosingNotification = functions.pubsub.schedule('00 19 * * SUN')
-    .timeZone('America/Denver')
-    .onRun((req, res) => {
-        getNotificationGroup().then(registrationTokens => {
-            const message = {
-                "notification": {
-                    "title": "Schedule closing",
-                    "body": "The schedule for this week is about to close. Please submit or make any changes before 8pm."
-                },
-                "tokens": registrationTokens,
-            };
-            sendNotificationsToGroup(message, registrationTokens, res)
-        });
-
     });
-
-
-exports.scheduleOpenNotification = functions.pubsub.schedule('00 8 * * FRI')
-    .timeZone('America/Denver')
-    .onRun((req, res) => {
-        const registrationTokens = getNotificationGroup();
-        const message = {
-            "notification": {
-                "title": "Schedule now open",
-                "body": "You can now sign up for next week's schedule in the app."
-            },
-            "tokens": registrationTokens,
-        };
-        sendNotificationsToGroup(message, registrationTokens, res)
-    });
+}
 
 function getNotificationGroup(recipients) {
     return admin.database().ref("approvedNumbers").once('value', (snapshot) => { })
         .then((snapshot) => {
             const data = snapshot.val()
+            // console.log(data)
             //flatten users to list of tokens
             var tokenList = []
             for (const [userKey, userValue] of Object.entries(data)) {
@@ -104,7 +115,7 @@ function sendNotificationsToGroup(message, registrationTokens, res) {
             if (response.failureCount > 0) {
                 const failedTokens = [];
                 response.responses.forEach((resp, idx) => {
-                    console.log(resp)
+                    
                     if (!resp.success) {
                         failedTokens.push(registrationTokens[idx]);
                     }
@@ -230,10 +241,10 @@ function buildSortedObject(pair) {
     return { "name": name, "phoneNumber": pair.phoneNumber }
 }
 
-function getDBRefOfPlayers() {
+function getDBRefOfCurrentWeekName() {
     const today = new Date();
     var dayName = "Monday";
-    
+
     var diff = 0;
     if (today.getDay() == 0) {
         diff = 1 //sunday
@@ -241,11 +252,9 @@ function getDBRefOfPlayers() {
         diff = -1 * (today.getDay() - 1)
     }
     const monday = today.addDays(diff)
-    const weekName = "Monday-" + (monday.getMonth() + 1) + "-"  + monday.getDate() + "-" + monday.getFullYear()
-    //actually gets tomorrow because of timezone
-    const loc = "sorted-v2/"+weekName+"/"+today.toLocaleString('en-us', {weekday:'long'})
-    return loc;
+    const weekName = "Monday-" + (monday.getMonth() + 1) + "-" + monday.getDate() + "-" + monday.getFullYear()
+    return weekName
 
 }
 
-Date.prototype.addDays=function(d){return new Date(this.valueOf()+864E5*d);};
+Date.prototype.addDays = function (d) { return new Date(this.valueOf() + 864E5 * d); };
