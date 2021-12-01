@@ -20,28 +20,33 @@ function runSort(snapshot, location, key) {
 }
 
 exports.test = functions.https.onRequest((req, res) => {
-    getNotificationGroup(["5412078586"]).then(registrationTokens => {
-        const message = {
-            "notification": {
-                "title": "Schedule closing",
-                "body": "The schedule for this week is about to close. Please submit or make any changes before 8pm."
-            },
-            "tokens": registrationTokens,
-        };
-        sendNotificationsToGroup(message, registrationTokens, res)
-    })
+    
+
+    
 
 })
 
 exports.scheduleReminderNotification = functions.pubsub.schedule('0 20 * * MON-FRI')
     .timeZone('America/Denver')
     .onRun((context) => {
-        //get date
-        const date = Date.now()
-
-        //get players tomorrow
-        //get notification tokens
-        //send notification
+        admin.database().ref(getDBRefOfPlayers()).once('value', (snapshot) => {
+            const data = snapshot.val()
+            var phoneNumbers = []
+            for (const [userKey, userValue] of Object.entries(data)) {
+                phoneNumbers.push(userValue.phoneNumber)
+            }
+                
+            getNotificationGroup(phoneNumbers).then(registrationTokens => {
+                const message = {
+                    "notification": {
+                        "title": "Player reminder",
+                        "body": "You are scheduled to play tomorrow. If you can no longer play, please find a substitute from the list."
+                    },
+                    "tokens": registrationTokens,
+                };
+                sendNotificationsToGroup(message, registrationTokens, res)
+            })
+        })
     })
 
 exports.scheduleClosingNotification = functions.pubsub.schedule('00 19 * * SUN')
@@ -224,3 +229,23 @@ function buildSortedObject(pair) {
     }
     return { "name": name, "phoneNumber": pair.phoneNumber }
 }
+
+function getDBRefOfPlayers() {
+    const today = new Date();
+    var dayName = "Monday";
+    
+    var diff = 0;
+    if (today.getDay() == 0) {
+        diff = 1 //sunday
+    } else {
+        diff = -1 * (today.getDay() - 1)
+    }
+    const monday = today.addDays(diff)
+    const weekName = "Monday-" + (monday.getMonth() + 1) + "-"  + monday.getDate() + "-" + monday.getFullYear()
+    //actually gets tomorrow because of timezone
+    const loc = "sorted-v2/"+weekName+"/"+today.toLocaleString('en-us', {weekday:'long'})
+    return loc;
+
+}
+
+Date.prototype.addDays=function(d){return new Date(this.valueOf()+864E5*d);};
