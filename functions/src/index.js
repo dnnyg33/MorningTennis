@@ -13,11 +13,11 @@ exports.sortWeekv2 = functions.database.ref("/incoming-v2/{day}").onWrite((snaps
 });
 
 exports.test = functions.https.onRequest((req, res) => {
-    run_reminderNotification(res)
+    run_scheduleNotification(res, "Test", "body")
 
 })
 
-exports.scheduleReminderNotification = functions.pubsub.schedule('0 17 * * SUN-THU')
+exports.scheduleReminderNotification = functions.pubsub.schedule('20 18 * * SUN-THU')
     .timeZone('America/Denver')
     .onRun((context) => {
         run_reminderNotification()
@@ -67,7 +67,7 @@ function run_reminderNotification(res) {
             const data = snapshot.val()
             var phoneNumbers = []
             var count = 0
-            
+
             for (const [userKey, userValue] of Object.entries(data)) {
                 if (count == limit) break;
                 count++
@@ -97,10 +97,14 @@ function getNotificationGroup(recipients) {
             // console.log(data)
             //flatten users to list of tokens
             var tokenList = []
+            //for each user
             for (const [userKey, userValue] of Object.entries(data)) {
                 if (recipients === undefined || recipients.includes(userKey)) {
-                    for (const [tokenKey, tokenValue] of Object.entries(userValue.tokens)) {
-                        tokenList.push(tokenValue)
+                    //add each token
+                    if (userValue.tokens != null) {
+                        for (const [tokenKey, tokenValue] of Object.entries(userValue.tokens)) {
+                            tokenList.push(tokenValue)
+                        }
                     }
                 }
             }
@@ -115,7 +119,7 @@ function sendNotificationsToGroup(message, registrationTokens, res) {
             if (response.failureCount > 0) {
                 const failedTokens = [];
                 response.responses.forEach((resp, idx) => {
-                    
+
                     if (!resp.success) {
                         failedTokens.push(registrationTokens[idx]);
                     }
