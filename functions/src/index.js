@@ -37,7 +37,7 @@ exports.scheduleOpenNotification = functions.pubsub.schedule('00 8 * * FRI')
         run_scheduleNotification(res, "Schedule now open", "You can now sign up for next week's schedule in the app.")
     });
 
-exports.migrateSheetsEntry = functions.database.ref("/incoming-old/{day}/{entry}").onCreate((snapshot, context) => {
+exports.migrateSheetsEntry = functions.database.ref("/incoming/{day}/{entry}").onCreate((snapshot, context) => {
     const data = snapshot.val()
     console.log(JSON.stringify(data))
     //get timestamp

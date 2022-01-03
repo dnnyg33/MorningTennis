@@ -94,7 +94,7 @@ function updateHeader(date, locked) {
 }
 
 function loadSchedule(date, loadEl, firebase) {
-    var query = firebase.database().ref("/sorted/" + date)
+    var query = firebase.database().ref("/sorted-v2/" + date)
     query.once('value').then(function (snapshot) {
         let locked = parseDate(date) < new Date()
         updateTable(snapshot.val(), locked)
@@ -105,7 +105,7 @@ function loadSchedule(date, loadEl, firebase) {
 }
 
 function fetchHistoryLinks(firebase) {
-    var query = firebase.database().ref("/sorted/")
+    var query = firebase.database().ref("/sorted-v2/")
     query.once('value').then(function (snapshot) {
         loadHistoryLink(snapshot.val())
 
