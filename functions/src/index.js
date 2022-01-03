@@ -19,8 +19,8 @@ exports.test = functions.https.onRequest((req, res) => {
 
 exports.scheduleReminderNotification = functions.pubsub.schedule('20 18 * * SUN-THU')
     .timeZone('America/Denver')
-    .onRun((context) => {
-        run_reminderNotification()
+    .onRun((req, res) => {
+        run_reminderNotification(res)
     })
 
 exports.scheduleClosingNotification = functions.pubsub.schedule('00 19 * * SUN')
@@ -36,6 +36,21 @@ exports.scheduleOpenNotification = functions.pubsub.schedule('00 8 * * FRI')
     .onRun((req, res) => {
         run_scheduleNotification(res, "Schedule now open", "You can now sign up for next week's schedule in the app.")
     });
+
+exports.migrateSheetsEntry = functions.database.ref("/incoming-old/{day}/{entry}").onCreate((snapshot, context) => {
+    const data = snapshot.val()
+    console.log(JSON.stringify(data))
+    //get timestamp
+    const originalTimestamp = data.timestamp
+    console.log(originalTimestamp)
+    //convert timestamp
+    const newTimestamp = new Date(originalTimestamp).getTime()
+    console.log(newTimestamp)
+    //add (not replace) in incoming-v2/{day}/{timestamp}
+    const ref = "/incoming-v2/" + context.params.day + "/" + newTimestamp
+    console.log(ref)
+    return admin.database().ref(ref).update(data)
+})
 
 function runSort(snapshot, location, key) {
     const original = snapshot.after.val()
