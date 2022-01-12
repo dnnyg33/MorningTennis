@@ -74,10 +74,13 @@ function run_scheduleNotification(res, title, body) {
 
 function run_reminderNotification(res) {
     const dayName = new Date().toLocaleString('en-us', { weekday: 'long' })
-    const playersRef = "sorted/" + getDBRefOfCurrentWeekName() + "/" + dayName
-    const slotsRef = "sorted/" + getDBRefOfCurrentWeekName() + "/slots"
+    const playersRef = "sorted-v2/" + getDBRefOfCurrentWeekName() + "/" + dayName
+    const slotsRef = "sorted-v2/" + getDBRefOfCurrentWeekName() + "/slots"
     admin.database().ref(slotsRef).once('value', (snapshot) => {
-        const limit = snapshot.val()[dayName]
+        var limit = 4
+        if (snapshot.val() != null) {
+            limit = snapshot.val()[dayName]
+        }
         admin.database().ref(playersRef).once('value', (snapshot) => {
             const data = snapshot.val()
             var phoneNumbers = []
