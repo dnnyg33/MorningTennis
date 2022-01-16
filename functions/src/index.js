@@ -12,16 +12,28 @@ exports.sortWeekv2 = functions.database.ref("/incoming-v2/{day}").onWrite((snaps
     return runSort(snapshot, "/sorted-v2", context.params.day);
 });
 
-exports.test = functions.https.onRequest((req, res) => {
+exports.testSendNotification = functions.https.onRequest((req, res) => {
     run_scheduleNotification(res, "Test", "body")
 
 })
 
-exports.scheduleReminderNotification = functions.pubsub.schedule('20 18 * * SUN-THU')
+exports.testReminder = functions.https.onRequest((req, res) => {
+    run_reminderNotification(res)
+
+})
+
+exports.scheduleReminderNotification = functions.pubsub.schedule('20 18 * * MON-THU')
     .timeZone('America/Denver')
     .onRun((req, res) => {
         run_reminderNotification(res)
     })
+
+
+exports.scheduleReminderNotificationSunday = functions.pubsub.schedule('30 20 * * SUN')
+.timeZone('America/Denver')
+.onRun((req, res) => {
+    run_reminderNotification(res)
+})
 
 exports.scheduleClosingNotification = functions.pubsub.schedule('00 19 * * SUN')
     .timeZone('America/Denver')
