@@ -24,29 +24,29 @@ exports.testReminder = functions.https.onRequest((req, res) => {
 
 exports.scheduleReminderNotification = functions.pubsub.schedule('20 18 * * MON-THU')
     .timeZone('America/Denver')
-    .onRun((req, res) => {
-        run_reminderNotification(res)
+    .onRun((context) => {
+        run_reminderNotification(null)
     })
 
 
 exports.scheduleReminderNotificationSunday = functions.pubsub.schedule('30 20 * * SUN')
 .timeZone('America/Denver')
-.onRun((req, res) => {
-    run_reminderNotification(res)
+.onRun((context) => {
+    run_reminderNotification(null)
 })
 
 exports.scheduleClosingNotification = functions.pubsub.schedule('00 19 * * SUN')
     .timeZone('America/Denver')
-    .onRun((req, res) => {
-        run_scheduleNotification(res, "Schedule closing", "The schedule for this week is about to close. Please submit or make any changes before 8pm.")
+    .onRun((context) => {
+        run_scheduleNotification(null, "Schedule closing", "The schedule for this week is about to close. Please submit or make any changes before 8pm.")
 
     });
 
 
 exports.scheduleOpenNotification = functions.pubsub.schedule('00 8 * * FRI')
     .timeZone('America/Denver')
-    .onRun((req, res) => {
-        run_scheduleNotification(res, "Schedule now open", "You can now sign up for next week's schedule in the app.")
+    .onRun((context) => {
+        run_scheduleNotification(null, "Schedule now open", "You can now sign up for next week's schedule in the app.")
     });
 
 exports.migrateSheetsEntry = functions.database.ref("/incoming/{day}/{entry}").onCreate((snapshot, context) => {
@@ -155,10 +155,14 @@ function sendNotificationsToGroup(message, registrationTokens, res) {
                     }
                 });
                 console.log('List of tokens that caused failures: ' + failedTokens);
-                res.end('List of tokens that caused failures: ' + failedTokens)
+                if (res != null) {
+                    res.end('List of tokens that caused failures: ' + failedTokens)
+                }
             } else {
                 console.log("No errors sending messages")
-                res.end("No errors sending messages")
+                if (res != null) {
+                    res.end("No errors sending messages")
+                }
             }
         })
 }
