@@ -14,12 +14,16 @@ exports.sortWeekv2 = functions.database.ref("/incoming-v2/{day}").onWrite((snaps
 
 exports.testSendNotification = functions.https.onRequest((req, res) => {
     run_scheduleNotification(res, "Test", "body")
-
 })
 
 exports.testReminder = functions.https.onRequest((req, res) => {
     run_reminderNotification(res)
 
+})
+
+//A notification for an alternate who has been promoted to player due to an RSVP event.
+exports.sendRSVPUpdateNotification = functions.https.onRequest((req, res) => {
+    run_scheduleNotification(res, "Test", "body")
 })
 
 exports.scheduleReminderNotification = functions.pubsub.schedule('20 18 * * MON-THU')
@@ -100,6 +104,7 @@ function run_reminderNotification(res) {
 
             for (const [userKey, userValue] of Object.entries(data)) {
                 if (count == limit) break;
+                if (userValue.isComing === false) continue;
                 count++
                 let cleanNumber = userValue.phoneNumber.toString().replace(/\D/g, '')
                 phoneNumbers.push(cleanNumber.toString())
