@@ -214,7 +214,7 @@ function run_reminderNotification(res) {
                 const message = {
                     "notification": {
                         "title": "Player reminder",
-                        "body": "You are scheduled to play tomorrow. If you can no longer play, please find a substitute from the list."
+                        "body": "You are scheduled to play tomorrow. Tap to RSVP now."
                     },
                     "tokens": registrationTokens,
                 };
