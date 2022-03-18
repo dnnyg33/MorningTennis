@@ -17,13 +17,62 @@ exports.testSendNotification = functions.https.onRequest((req, res) => {
 })
 
 exports.testReminder = functions.https.onRequest((req, res) => {
-    run_reminderNotification(res)
+    run_procastinatorNotification(res)
 
 })
 
 //A notification for an alternate who has been promoted to player due to an RSVP event.
-exports.sendRSVPUpdateNotification = functions.https.onRequest((req, res) => {
-    run_scheduleNotification(res, "Test", "body")
+exports.sendRSVPUpdateNotification = functions.https.onCall((req, res) => {
+    
+    const position = parseInt(req.position)
+    const weekPath = req.weekPath
+    const dayName = req.dayName
+    const today = Date.now().day
+    const dayNumber = dayOfWeekAsInteger(dayName)
+    //if rsvp is in the past, just break
+    if (dayNumber < today) {
+        return;
+    }
+    admin.database().ref(weekPath).once('value', (snapshot) => {
+        const weekData = snapshot.val()
+        const dayData = weekData[dayName]
+        var slots = 4;
+        if (weekData.slots != null) {
+            slots = weekData.slots[dayName]
+        }
+        var phoneNumbers = []
+        var index = 0
+        var playersCount = 0
+        for (const [userKey, userValue] of Object.entries(dayData)) {
+            if (userValue.isComing !== false) {
+                if (playersCount == slots){
+                    break;
+                }
+                playersCount++
+            }
+            index++
+            if (index <= position) continue;
+            if (userValue.isComing == null) {
+                let cleanNumber = userValue.phoneNumber.toString().replace(/\D/g, '')
+                phoneNumbers.push(cleanNumber.toString())
+                
+            } 
+            
+        }
+        console.log(phoneNumbers)
+
+        getNotificationGroup(phoneNumbers).then(registrationTokens => {
+            const message = {
+                "notification": {
+                    "title": "You've been promoted to play ("+dayName+")!",
+                    "body": "Someone can't make it and you are now scheduled to play on "+dayName+". Tap to RSVP now."
+                },
+                "tokens": registrationTokens,
+            };
+            sendNotificationsToGroup(message, registrationTokens, res)
+        })
+    })
+    
 })
 
 exports.scheduleReminderNotification = functions.pubsub.schedule('20 18 * * MON-THU')
@@ -301,3 +350,12 @@ function getDBRefOfCurrentWeekName() {
 }
 
 Date.prototype.addDays = function (d) { return new Date(this.valueOf() + 864E5 * d); };
+/**
+*
+* @method dayOfWeekAsInteger
+* @param {String} day
+* @return {Number} Returns day as number
+*/
+function dayOfWeekAsInteger(day) {
+  return ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].indexOf(day);
+}
