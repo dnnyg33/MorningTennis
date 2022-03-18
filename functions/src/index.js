@@ -95,6 +95,56 @@ exports.scheduleClosingNotification = functions.pubsub.schedule('00 19 * * SUN')
 
     });
 
+exports.scheduleProcrastinatorNotification = functions.pubsub.schedule('0 11 ? * SAT-SUN')
+    .timeZone('America/Denver')
+    .onRun((context) =>  {
+       run_procastinatorNotification()
+    })
+
+function run_procastinatorNotification() {
+    const dayName = new Date().toLocaleString('en-us', { weekday: 'long' })
+    const allRegisteredPlayers = "incoming-v2/" + getDBRefOfCurrentWeekName()
+
+admin.database().ref(allRegisteredPlayers).once('value', (snapshot) => {})
+.then((registered) => {
+    const data = registered.val()
+    var registeredNumbers = []
+    for (const [key, submission] of Object.entries(data)) {
+        registeredNumbers.push(submission.phoneNumber)
+    }
+
+    admin.database().ref("approvedNumbers").once('value', (snapshot2) => { 
+    
+        const data2 = snapshot2.val()
+        //flatten users to list of phone numbers
+        var allPhoneNumbers = []
+        for (const [userKey, userValue] of Object.entries(data2)) {
+            allPhoneNumbers.push(userKey)
+        }
+        console.log("all")
+        
+
+        var procrastinators = allPhoneNumbers.filter( ( el ) => !registeredNumbers.includes( el ) );
+        console.log("procrastinators")
+        console.log(procrastinators)
+        getNotificationGroup(procrastinators).then( registrationTokens => {
+            const message = {
+                "notification": {
+                    "title": "Sign up for next week",
+                    "body": "You have not yet signed up for next week. The schedule closes at 8pm Sunday."
+                },
+                "tokens": registrationTokens,
+            };
+            sendNotificationsToGroup(message, registrationTokens, null)
+        });
+        
+    })
+
+    
+})
+    
+}
+
 
 exports.scheduleOpenNotification = functions.pubsub.schedule('00 8 * * FRI')
     .timeZone('America/Denver')
