@@ -171,7 +171,7 @@ function runSort(snapshot, location, key) {
     const original = snapshot.after.val()
 
     var groups = tennisSort(original)
-    return admin.database().ref(location).child(key).set(groups)
+    return admin.database().ref(location).child(key).update(groups)
 }
 
 function run_scheduleNotification(res, title, body) {
