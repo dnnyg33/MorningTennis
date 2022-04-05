@@ -23,7 +23,7 @@ exports.testReminder = functions.https.onRequest((req, res) => {
 
 //A notification for an alternate who has been promoted to player due to an RSVP event.
 exports.sendRSVPUpdateNotification = functions.https.onCall((req, res) => {
-    
+
     const position = parseInt(req.position)
     const weekPath = req.weekPath
     const dayName = req.dayName
@@ -45,7 +45,7 @@ exports.sendRSVPUpdateNotification = functions.https.onCall((req, res) => {
         var playersCount = 0
         for (const [userKey, userValue] of Object.entries(dayData)) {
             if (userValue.isComing !== false) {
-                if (playersCount == slots){
+                if (playersCount == slots) {
                     break;
                 }
                 playersCount++
@@ -55,24 +55,24 @@ exports.sendRSVPUpdateNotification = functions.https.onCall((req, res) => {
             if (userValue.isComing == null) {
                 let cleanNumber = userValue.phoneNumber.toString().replace(/\D/g, '')
                 phoneNumbers.push(cleanNumber.toString())
-                
-            } 
-            
+
+            }
+
         }
         console.log(phoneNumbers)
 
         getNotificationGroup(phoneNumbers).then(registrationTokens => {
             const message = {
                 "notification": {
-                    "title": "You've been promoted to play ("+dayName+")!",
-                    "body": "Someone can't make it and you are now scheduled to play on "+dayName+". Tap to RSVP now."
+                    "title": "You've been promoted to play (" + dayName + ")!",
+                    "body": "Someone can't make it and you are now scheduled to play on " + dayName + ". Tap to RSVP now."
                 },
                 "tokens": registrationTokens,
             };
             sendNotificationsToGroup(message, registrationTokens, res)
         })
     })
-    
+
 })
 
 exports.scheduleReminderNotification = functions.pubsub.schedule('20 18 * * MON-THU')
@@ -83,10 +83,10 @@ exports.scheduleReminderNotification = functions.pubsub.schedule('20 18 * * MON-
 
 
 exports.scheduleReminderNotificationSunday = functions.pubsub.schedule('30 20 * * SUN')
-.timeZone('America/Denver')
-.onRun((context) => {
-    run_reminderNotification(null)
-})
+    .timeZone('America/Denver')
+    .onRun((context) => {
+        run_reminderNotification(null)
+    })
 
 exports.scheduleClosingNotification = functions.pubsub.schedule('00 19 * * SUN')
     .timeZone('America/Denver')
@@ -95,54 +95,54 @@ exports.scheduleClosingNotification = functions.pubsub.schedule('00 19 * * SUN')
 
     });
 
-exports.scheduleProcrastinatorNotification = functions.pubsub.schedule('0 11 ? * SAT-SUN')
+exports.scheduleProcrastinatorNotification = functions.pubsub.schedule('00 11 * * SUN,SAT')
     .timeZone('America/Denver')
-    .onRun((context) =>  {
-       run_procastinatorNotification()
+    .onRun((context) => {
+        run_procastinatorNotification()
     })
 
 function run_procastinatorNotification() {
     const dayName = new Date().toLocaleString('en-us', { weekday: 'long' })
     const allRegisteredPlayers = "incoming-v2/" + getDBRefOfCurrentWeekName()
 
-admin.database().ref(allRegisteredPlayers).once('value', (snapshot) => {})
-.then((registered) => {
-    const data = registered.val()
-    var registeredNumbers = []
-    for (const [key, submission] of Object.entries(data)) {
-        registeredNumbers.push(submission.phoneNumber)
-    }
+    admin.database().ref(allRegisteredPlayers).once('value', (snapshot) => { })
+        .then((registered) => {
+            const data = registered.val()
+            var registeredNumbers = []
+            for (const [key, submission] of Object.entries(data)) {
+                registeredNumbers.push(submission.phoneNumber)
+            }
 
-    admin.database().ref("approvedNumbers").once('value', (snapshot2) => { 
-    
-        const data2 = snapshot2.val()
-        //flatten users to list of phone numbers
-        var allPhoneNumbers = []
-        for (const [userKey, userValue] of Object.entries(data2)) {
-            allPhoneNumbers.push(userKey)
-        }
-        console.log("all")
-        
+            admin.database().ref("approvedNumbers").once('value', (snapshot2) => {
 
-        var procrastinators = allPhoneNumbers.filter( ( el ) => !registeredNumbers.includes( el ) );
-        console.log("procrastinators")
-        console.log(procrastinators)
-        getNotificationGroup(procrastinators).then( registrationTokens => {
-            const message = {
-                "notification": {
-                    "title": "Sign up for next week",
-                    "body": "You have not yet signed up for next week. The schedule closes at 8pm Sunday."
-                },
-                "tokens": registrationTokens,
-            };
-            sendNotificationsToGroup(message, registrationTokens, null)
-        });
-        
-    })
+                const data2 = snapshot2.val()
+                //flatten users to list of phone numbers
+                var allPhoneNumbers = []
+                for (const [userKey, userValue] of Object.entries(data2)) {
+                    allPhoneNumbers.push(userKey)
+                }
+                console.log("all")
 
-    
-})
-    
+
+                var procrastinators = allPhoneNumbers.filter((el) => !registeredNumbers.includes(el));
+                console.log("procrastinators")
+                console.log(procrastinators)
+                getNotificationGroup(procrastinators).then(registrationTokens => {
+                    const message = {
+                        "notification": {
+                            "title": "Sign up for next week",
+                            "body": "You have not yet signed up for next week. The schedule closes at 8pm Sunday."
+                        },
+                        "tokens": registrationTokens,
+                    };
+                    sendNotificationsToGroup(message, registrationTokens, null)
+                });
+
+            })
+
+
+        })
+
 }
 
 
@@ -407,5 +407,5 @@ Date.prototype.addDays = function (d) { return new Date(this.valueOf() + 864E5 *
 * @return {Number} Returns day as number
 */
 function dayOfWeekAsInteger(day) {
-  return ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"].indexOf(day);
+    return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].indexOf(day);
 }
