@@ -314,6 +314,7 @@ function tennisSort(data) {
             return
         }
 
+        let playerCountForDay = 4
         let addedAsAlternate = false
         if (playerPreference.day == "Monday") {
             monday.push(buildSortedObject(playerPreference))
@@ -378,16 +379,13 @@ function buildSortedObjectFull(day, item, choice) {
     }
     var hasSunpro = false
     console.log("Item.hasSunpro " + item.sunPro)
-    if (item.sunPro === "Yes") {
+    if (item.sunPro === "Yes") {//replace with tab tracker
         hasSunpro = true
     }
     return { "day": day, "name": item.name + " (" + choice + ")", "phoneNumber": phoneNumber, "hasSunpro": hasSunpro }
 }
 function buildSortedObject(pair) {
     var name = pair.name
-    if (pair.hasSunpro) {
-        name = "*" + pair.name
-    }
     return { "name": name, "phoneNumber": pair.phoneNumber }
 }
 
@@ -398,6 +396,8 @@ function getDBRefOfCurrentWeekName() {
     var diff = 0;
     if (today.getDay() == 0) {
         diff = 1 //sunday
+    } else if(today.getDay() == 6) {
+        diff = 2 //saturday
     } else {
         diff = -1 * (today.getDay() - 1)
     }
