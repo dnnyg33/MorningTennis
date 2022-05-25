@@ -12,12 +12,17 @@ exports.sortWeekv2 = functions.database.ref("/incoming-v2/{day}").onWrite((snaps
     return runSort(snapshot, "/sorted-v2", context.params.day);
 });
 
+exports.lateSubmissions = functions.database.ref("late-submissions/{weekName}/{day}/{pushKey}").onWrite((snapshot, context) => {
+    return processLateSubmission(snapshot, context.params.weekName, context.params.day)
+    
+})
+
 exports.testSendNotification = functions.https.onRequest((req, res) => {
     run_scheduleNotification(res, "Test", "body")
 })
 
 exports.testReminder = functions.https.onRequest((req, res) => {
-    run_procastinatorNotification(res)
+    admin.database().ref('groups').child('provo').child('scheduleIsOpen').set(false)
 
 })
 
@@ -180,6 +185,18 @@ function runSort(snapshot, location, key) {
 
     var groups = tennisSort(original)
     return admin.database().ref(location).child(key).update(groups)
+}
+
+function processLateSubmission(snapshot, weekName, day) {
+    const original = snapshot.after.val()
+    return admin.database().ref("sorted-v2/"+weekName+"/"+day).once('value', (snapshot) => {
+        const data = snapshot.val()
+        const existingCount = data.length
+        const newPlayerRef = "sorted-v2/"+weekName+"/"+day+"/"+existingCount
+        const newPlayerObj = {"name": original.name, "phoneNumber": original.phoneNumber}
+        console.log("adding player " + JSON.stringify(newPlayerObj) + " to " + newPlayerRef)
+        admin.database().ref(newPlayerRef).set(newPlayerObj)
+    })
 }
 
 function run_scheduleNotification(res, title, body) {
