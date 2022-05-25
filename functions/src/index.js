@@ -75,7 +75,7 @@ exports.sendRSVPUpdateNotification = functions.https.onCall((req, res) => {
 
 })
 
-exports.scheduleReminderNotification = functions.pubsub.schedule('20 18 * * MON-THU')
+exports.scheduleReminderNotification = functions.pubsub.schedule('20 15 * * MON-THU')
     .timeZone('America/Denver')
     .onRun((context) => {
         run_reminderNotification(null)
@@ -101,8 +101,15 @@ exports.scheduleProcrastinatorNotification = functions.pubsub.schedule('00 11 * 
         run_procastinatorNotification()
     })
 
+exports.scheduleCloseScheduleCommand = functions.pubsub.schedule('05 20 * * SUN')
+    .timeZone('America/Denver')
+    .onRun((context) =>  {
+        admin.database().ref('groups').child('provo').child('scheduleIsOpen').set(false)
+    })
+
 function run_procastinatorNotification() {
     const dayName = new Date().toLocaleString('en-us', { weekday: 'long' })
+    console.log(getDBRefOfCurrentWeekName())
     const allRegisteredPlayers = "incoming-v2/" + getDBRefOfCurrentWeekName()
 
     admin.database().ref(allRegisteredPlayers).once('value', (snapshot) => { })
@@ -149,6 +156,7 @@ function run_procastinatorNotification() {
 exports.scheduleOpenNotification = functions.pubsub.schedule('00 8 * * FRI')
     .timeZone('America/Denver')
     .onRun((context) => {
+        admin.database().ref('groups').child('provo').child('scheduleIsOpen').set(true)
         run_scheduleNotification(null, "Schedule now open", "You can now sign up for next week's schedule in the app.")
     });
 
