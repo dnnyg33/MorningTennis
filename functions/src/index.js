@@ -18,7 +18,8 @@ exports.lateSubmissions = functions.database.ref("late-submissions/{weekName}/{d
 })
 
 exports.testSendNotification = functions.https.onRequest((req, res) => {
-    run_scheduleNotification(res, "Test", "body")
+    run_reminderNotification()
+    res.end("End")
 })
 
 exports.testReminder = functions.https.onRequest((req, res) => {
@@ -83,14 +84,14 @@ exports.sendRSVPUpdateNotification = functions.https.onCall((req, res) => {
 exports.scheduleReminderNotification = functions.pubsub.schedule('20 15 * * MON-THU')
     .timeZone('America/Denver')
     .onRun((context) => {
-        run_reminderNotification(null)
+        run_reminderNotification()
     })
 
 
 exports.scheduleReminderNotificationSunday = functions.pubsub.schedule('30 20 * * SUN')
     .timeZone('America/Denver')
     .onRun((context) => {
-        run_reminderNotification(null)
+        run_reminderNotification()
     })
 
 exports.scheduleClosingNotification = functions.pubsub.schedule('00 19 * * SUN')
@@ -212,8 +213,13 @@ function run_scheduleNotification(res, title, body) {
     });
 }
 
-function run_reminderNotification(res) {
-    const dayName = new Date().toLocaleString('en-us', { weekday: 'long' })
+function run_reminderNotification() {
+    const today = new Date()
+    let tomorrow = new Date()
+    tomorrow.setDate(today.getDate() + 1)
+    console.log(tomorrow)
+    const dayName = tomorrow.toLocaleString('en-us', { weekday: 'long', timeZone: 'America/Denver'})
+    console.log("dayName is " + dayName)
     const playersRef = "sorted-v2/" + getDBRefOfCurrentWeekName() + "/" + dayName
     const slotsRef = "sorted-v2/" + getDBRefOfCurrentWeekName() + "/slots"
     admin.database().ref(slotsRef).once('value', (snapshot) => {
@@ -223,6 +229,7 @@ function run_reminderNotification(res) {
         }
         admin.database().ref(playersRef).once('value', (snapshot) => {
             const data = snapshot.val()
+            console.log(data)
             var phoneNumbers = []
             var count = 0
 
@@ -243,7 +250,7 @@ function run_reminderNotification(res) {
                     },
                     "tokens": registrationTokens,
                 };
-                sendNotificationsToGroup(message, registrationTokens, res)
+                sendNotificationsToGroup(message, registrationTokens, null)
             })
         })
     });
@@ -331,23 +338,23 @@ function tennisSort(data) {
             return
         }
 
-        let playerCountForDay = 4
+        let playerCountForDay = 8
         let addedAsAlternate = false
         if (playerPreference.day == "Monday") {
             monday.push(buildSortedObject(playerPreference))
-            addedAsAlternate = monday.length > 4
+            addedAsAlternate = monday.length > playerCountForDay
         } else if (playerPreference.day == "Tuesday") {
             tuesday.push(buildSortedObject(playerPreference))
-            addedAsAlternate = tuesday.length > 4
+            addedAsAlternate = tuesday.length > playerCountForDay
         } else if (playerPreference.day == "Wednesday") {
             wednesday.push(buildSortedObject(playerPreference))
-            addedAsAlternate = wednesday.length > 4
+            addedAsAlternate = wednesday.length > playerCountForDay
         } else if (playerPreference.day == "Thursday") {
             thursday.push(buildSortedObject(playerPreference))
-            addedAsAlternate = thursday.length > 4
+            addedAsAlternate = thursday.length > playerCountForDay
         } else if (playerPreference.day == "Friday") {
             friday.push(buildSortedObject(playerPreference))
-            addedAsAlternate = friday.length > 4
+            addedAsAlternate = friday.length > playerCountForDay
         } else {
             //skip
         }
@@ -364,6 +371,10 @@ function tennisSort(data) {
         "Thursday": thursday,
         "Friday": friday
     }
+}
+
+function hasNonFoursome(length) {
+    return length % 4 == 0
 }
 
 function removeDuplicates(data) {
