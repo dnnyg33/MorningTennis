@@ -177,21 +177,24 @@ function run_reminderNotificationsForAllGroups() {
     console.log(tomorrow)
     const dayName = tomorrow.toLocaleString('en-us', { weekday: 'long', timeZone: 'America/Denver'})
     console.log("dayName is " + dayName)
-    admin.database().ref('groups').once('value', (snapshot) => {
+    admin.database().ref('groups').once('value', async (snapshot) => {
         const data = snapshot.val();
-        for (const [key, submission] of Object.entries(data)) {
+        for (const [key, groupValue] of Object.entries(data)) {
+            const groupName = groupValue.name
             const playersRef = "sorted-v3/" + key + "/" + getDBRefOfCurrentWeekName() + "/" + dayName
-            console.log("playersRef " + playersRef)
+            console.log("\nBuilding notifications for " + playersRef)
 
-            admin.database().ref(playersRef).once('value', (snapshot) => {
+            await admin.database().ref(playersRef).once('value', async (snapshot) => {
                 const data = snapshot.val()
-                console.log(data)
-                if (data == null) return;
+                if (data == null) {
+                    console.log("No players for this group/day")
+                    return;
+                }
                 var phoneNumbers = []
                 var count = 0
                 var limit = 4
                 for (const [userKey, userValue] of Object.entries(data)) {
-                    console.log("isComing for name: " + userValue.isComing + " - " + userValue.name)
+                    console.log("isComing for " + userValue.name +": " + userValue.isComing)
                     if (count == limit) break;
                     if (userValue.isComing != null) continue;
                     count++
@@ -199,17 +202,21 @@ function run_reminderNotificationsForAllGroups() {
                     phoneNumbers.push(cleanNumber.toString())
                 }
                 console.log(phoneNumbers)
-
-                getNotificationGroup(phoneNumbers).then(registrationTokens => {
-                    const message = {
-                        "notification": {
-                            "title": "Player reminder",
-                            "body": "You are scheduled to play tomorrow. Tap to RSVP now."
-                        },
-                        "tokens": registrationTokens,
-                    };
-                    sendNotificationsToGroup(message, registrationTokens, null)
-                })
+                if(phoneNumbers.length == 0) {
+                    console.log("No blank RSVPs for group " + key)
+                } else {
+                    console.log(phoneNumbers.length + " blank RSVPs")
+                    await getNotificationGroup(phoneNumbers).then(registrationTokens => {
+                        const message = {
+                            "notification": {
+                                "title": "Player reminder",
+                                "body": "You are scheduled to play tomorrow with "+ groupName +". Tap to RSVP now."
+                            },
+                            "tokens": registrationTokens,
+                        };
+                        sendNotificationsToGroup(message, registrationTokens, null)
+                    })
+                }
             });
         }
     })
@@ -308,7 +315,8 @@ function run_scheduleNotification(res, title, body) {
 }
 
 
-function getNotificationGroup(recipients) {
+async function getNotificationGroup(recipients) {
+    console.log("preparing to send push to " + recipients)
     return admin.database().ref("approvedNumbers").once('value', (snapshot) => { })
         .then((snapshot) => {
             const data = snapshot.val()
