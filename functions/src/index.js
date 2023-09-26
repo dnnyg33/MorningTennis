@@ -156,8 +156,10 @@ exports.scheduleProcrastinatorNotification = functions.pubsub.schedule('00 11 * 
 exports.scheduleCloseScheduleCommand = functions.pubsub.schedule('05 20 * * SUN')
     .timeZone('America/Denver')
     .onRun((context) =>  {
+        admin.database().ref('groups-v2').child('provo').child('scheduleIsOpen').set(false)
         admin.database().ref('groups').child('provo').child('scheduleIsOpen').set(false)
         admin.database().ref('groups').child('sunpro').child('scheduleIsOpen').set(false)
+        admin.database().ref('groups-v2').child('sunpro').child('scheduleIsOpen').set(false)
     })
 
     //actually open schedule
@@ -165,7 +167,9 @@ exports.scheduleOpenNotification = functions.pubsub.schedule('00 8 * * FRI')
 .timeZone('America/Denver')
 .onRun((context) => {
     admin.database().ref('groups').child('provo').child('scheduleIsOpen').set(true)
+    admin.database().ref('groups-v2').child('provo').child('scheduleIsOpen').set(true)
     admin.database().ref('groups').child('sunpro').child('scheduleIsOpen').set(true)
+    admin.database().ref('groups-v2').child('sunpro').child('scheduleIsOpen').set(true)
     run_scheduleNotification(null, "Schedule now open", "You can now sign up for next week's schedule in the app.")
 });
 
