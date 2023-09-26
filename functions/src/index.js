@@ -22,7 +22,8 @@ exports.lateSubmissions = functions.database.ref("late-submissions/{groupId}/{we
 })
 
 exports.testSendNotification = functions.https.onRequest((req, res) => {
-    run_reminderNotificationsForAllGroups()
+    console.log(req.body)
+    run_rsvpNotification(req.body, res)
     res.end("End")
 })
 
@@ -69,59 +70,13 @@ exports.addUserToGroup =  functions.https.onRequest((req, res) => {
     })
 })
 
-//A notification for an alternate who has been promoted to player due to an RSVP event.
+//A notification for an alternate who has been promoted to player due to an RSVP event or for a last minute change.
 exports.sendRSVPUpdateNotification = functions.https.onCall((req, res) => {
 
-    const position = parseInt(req.position)
-    const weekPath = req.weekPath
-    const dayName = req.dayName
-    const today = Date.now().day
-    const dayNumber = dayOfWeekAsInteger(dayName)
-    //if rsvp is in the past, just break
-    if (dayNumber < today) {
-        return;
-    }
-    admin.database().ref(weekPath).once('value', (snapshot) => {
-        const weekData = snapshot.val()
-        const dayData = weekData[dayName]
-        var slots = 4;
-        if (weekData.slots != null) {
-            slots = weekData.slots[dayName]
-        }
-        var phoneNumbers = []
-        var index = 0
-        var playersCount = 0
-        for (const [userKey, userValue] of Object.entries(dayData)) {
-            if (userValue.isComing !== false) {
-                if (playersCount == slots) {
-                    break;
-                }
-                playersCount++
-            }
-            index++
-            if (index <= position) continue;
-            if (userValue.isComing == null) {
-                let cleanNumber = userValue.phoneNumber.toString().replace(/\D/g, '')
-                phoneNumbers.push(cleanNumber.toString())
-
-            }
-
-        }
-        console.log(phoneNumbers)
-
-        getNotificationGroup(phoneNumbers).then(registrationTokens => {
-            const message = {
-                "notification": {
-                    "title": "You've been promoted to play (" + dayName + ")!",
-                    "body": "Someone can't make it and you are now scheduled to play on " + dayName + ". Tap to RSVP now."
-                },
-                "tokens": registrationTokens,
-            };
-            sendNotificationsToGroup(message, registrationTokens, res)
-        })
-    })
+    run_rsvpNotification(req, res)
 
 })
+
 
 //notification each day for players
 exports.scheduleReminderNotification = functions.pubsub.schedule('20 15 * * MON-THU')
@@ -316,6 +271,89 @@ function run_scheduleNotification(res, title, body) {
         };
         sendNotificationsToGroup(message, registrationTokens, res)
     });
+}
+
+function run_rsvpNotification(req, res) {
+    console.log("run_rsvpNoticication " + JSON.stringify(req.weekPath))
+
+    const position = parseInt(req.position)
+    const weekPath = req.weekPath
+    const dayName = req.dayName
+    const today = new Date()
+    const offsetHours = req.offsetHours? req.offsetHours : -6 
+    const dayNumber = dayOfWeekAsInteger(dayName)
+    //if rsvp is in the past, just break
+    if (dayNumber < new Date().getDay()) {
+        return;
+    }
+    console.log(dayNumber)
+    console.log(today.getHours() + offsetHours)
+    //if change is last minute, notify everyone
+    if ((dayNumber - today.getDay() == 1 && today.getHours() + offsetHours >= 19) || dayNumber - today.getDay() == 0)  {
+        
+        admin.database().ref(weekPath).once('value', (snapshot) => {
+            const weekData = snapshot.val()
+            console.log("weekData: " + JSON.stringify(weekData))
+            const dayData = weekData[dayName]
+            var phoneNumbers = []
+            for (const [userKey, userValue] of Object.entries(dayData)) {
+                let cleanNumber = userValue.phoneNumber.toString().replace(/\D/g, '')
+                phoneNumbers.push(cleanNumber.toString())
+            }
+            console.log(phoneNumbers)
+            getNotificationGroup(phoneNumbers).then(registrationTokens => {
+                const message = {
+                    "notification": {
+                        "title": "Last minute change!",
+                        "body": "Someone has made a last minute change to their RSVP. Please review the schedule for tomorrow (" + dayName + ")."
+                    },
+                    "tokens": registrationTokens,
+                };
+                console.log(message.notification.body)
+                sendNotificationsToGroup(message, registrationTokens, res)
+            })
+        })
+    } else {
+        admin.database().ref(weekPath).once('value', (snapshot) => {
+            const weekData = snapshot.val()
+            const dayData = weekData[dayName]
+            var slots = 4;
+            if (weekData.slots != null) {
+                slots = weekData.slots[dayName]
+            }
+            var phoneNumbers = []
+            var index = 0
+            var playersCount = 0
+            for (const [userKey, userValue] of Object.entries(dayData)) {
+                if (userValue.isComing !== false) {
+                    if (playersCount == slots) {
+                        break;
+                    }
+                    playersCount++
+                }
+                index++
+                if (index <= position) continue;
+                if (userValue.isComing == null) {
+                    let cleanNumber = userValue.phoneNumber.toString().replace(/\D/g, '')
+                    phoneNumbers.push(cleanNumber.toString())
+
+                }
+
+            }
+            console.log(phoneNumbers)
+
+            getNotificationGroup(phoneNumbers).then(registrationTokens => {
+                const message = {
+                    "notification": {
+                        "title": "You've been promoted to play (" + dayName + ")!",
+                        "body": "Someone can't make it and you are now scheduled to play on " + dayName + ". Tap to RSVP now."
+                    },
+                    "tokens": registrationTokens,
+                };
+                sendNotificationsToGroup(message, registrationTokens, res)
+            })
+        })
+    }
 }
 
 
