@@ -481,6 +481,9 @@ function tennisSortBySkill(data, playerInfoMap) {
     const weeklyMatches = {}
     while(Object.keys(daysAvailable).length > 0) {
         const topComboOfWeek = findBestMatches(daysAvailable);
+        if (topComboOfWeek == undefined) {
+            break;
+        }
         const key = Object.keys(topComboOfWeek)[0]
         delete daysAvailable[key]
         Object.assign(weeklyMatches, topComboOfWeek)
@@ -516,7 +519,12 @@ function tennisSortBySkill(data, playerInfoMap) {
         const allCombos = new Map();
         //find all combinations for each day
         for (const [key, item] of Object.entries(daysAvailable)) {//daysAvailable = {"Monday": {name: "5412078581", "utr": 5.5}}
-            const combos = Combinations(item, 4); //item = {name: "5412078581", "utr": 5.5}
+            var combos
+            if (item.length < 4) {
+                combos = [item];
+            } else {
+                combos =  Combinations(item, 4); //item = {name: "5412078581", "utr": 5.5}
+            }
             allCombos.set(key, sortCombosByHighestQuality(combos)); //allCombos = {"Monday": [{"1,4,2,3"}, {"1,3,2,5"}], "Tuesday"...}
         }
 
@@ -542,14 +550,19 @@ function tennisSortBySkill(data, playerInfoMap) {
 function sortCombosByHighestQuality(combinations) {
     var matchesByQuality = [];
     for (let index = 0; index < combinations.length; index++) {
-        const element = combinations[index].sortBy(i => i.utr);
-        const teamAutr = element[0].utr + element[3].utr
-        const teamButr = element[1].utr + element[2].utr
-        const balance = outOfPossible(13, Math.abs(teamAutr - teamButr))
-        const closeness = outOfPossible(15, calculateCloseness(element))
-        const bias = (element[0].goodwill + element[1].goodwill + element[2].goodwill + element[3].goodwill) /4
-        const quality = (balance + closeness) * bias
-        matchesByQuality.push({"players": element, stats: {"quality":quality, "closeness": closeness, "balance": balance, "bias": bias}})
+        const players = combinations[index];
+        if (players.length < 4) {
+            matchesByQuality.push({ "players": players, stats: { "quality": -1, "closeness": 0, "balance": 0, "bias": 0 } })
+        } else {
+            const sortedPlayers = players.sortBy(i => i.utr);
+            const teamAutr = sortedPlayers[0].utr + sortedPlayers[3].utr
+            const teamButr = sortedPlayers[1].utr + sortedPlayers[2].utr
+            const balance = outOfPossible(13, Math.abs(teamAutr - teamButr))
+            const closeness = outOfPossible(15, calculateCloseness(sortedPlayers))
+            const bias = (sortedPlayers[0].goodwill + sortedPlayers[1].goodwill + sortedPlayers[2].goodwill + sortedPlayers[3].goodwill) / 4
+            const quality = (balance + closeness) * bias
+            matchesByQuality.push({ "players": sortedPlayers, stats: { "quality": quality, "closeness": closeness, "balance": balance, "bias": bias } })
+        }
     }
     return matchesByQuality.sortBy(i => i.stats.quality);
 
@@ -567,7 +580,7 @@ function sortCombosByHighestQuality(combinations) {
     
 }
 function getPlayerSummary(element) {
-    if (element.length == 0) return ""
+    if (element.length < 4) return ""
     return element[0].name + "+" + element[3].name + " vs. " + element[1].name + "+" + element[2].name
 }
 
