@@ -15,10 +15,27 @@ exports.sortWeekv2 = functions.database.ref("/incoming-v2/{day}").onWrite((snaps
 exports.sortWeekv3 = functions.database.ref("/incoming-v3/{groupId}/{day}").onWrite((snapshot, context) => {
     return runSort(snapshot, "/sorted-v3/"+context.params.groupId, context.params.day);
 });
+
+exports.sortWeekv4 = functions.database.ref("/incoming-v4/{groupId}/{day}").onWrite((snapshot, context) => {
+    admin.database().ref('member_rankings').child(context.params.groupId).once('value', async (memberRankingsSnapshot) => {
+        const ranking = memberRankingsSnapshot.val();   
+        const incomingSubmissions = snapshot.after.val()
+        const writeLocation = "/sorted-v4/"+context.params.groupId
+        const weekNameKey = context.params.day;
+        const result = tennisSortBySkill(incomingSubmissions, ranking)
+        console.log("writing result " + JSON.stringify(result))
+        return admin.database().ref(writeLocation).child(weekNameKey).set(result)
+    })  
+})
  
 exports.lateSubmissions = functions.database.ref("late-submissions/{groupId}/{weekName}/{day}/{pushKey}").onWrite((snapshot, context) => {
-    return processLateSubmission(snapshot, context.params.groupId, context.params.weekName, context.params.day)
-    
+    const groupId = context.params.groupId;
+    const weekName = context.params.weekName;
+    const day = context.params.day
+    const writeLocationV3 = "sorted-v3/"+groupId+"/"+weekName+"/"+day
+    const writeLocationV4 = "sorted-v4/"+groupId+"/"+weekName+"/"+day+"/players/"
+    return processLateSubmission(snapshot, writeLocationV3).then(() => 
+    processLateSubmission(snapshot, writeLocationV4))    
 })
 
 exports.testSendNotification = functions.https.onRequest((req, res) => {
@@ -33,12 +50,16 @@ exports.testReminder = functions.https.onRequest((req, res) => {
 })
 
 exports.testSort = functions.https.onRequest((req, res) => {
-    admin.database().ref('member_rankings').child(req.body.groupId).once('value', async (snapshot) => {
+    console.log(req.query)
+    const groupId = req.query["groupId"];
+    const weekName = req.query["weekName"];
+    console.log(groupId+" "+weekName);
+    admin.database().ref('member_rankings').child(groupId).once('value', async (snapshot) => {
         const ranking = snapshot.val();   
-        const result = tennisSortBySkill(req.body.submissions, ranking)
+        const result = tennisSortBySkill(req.body[weekName], ranking)
         res.send(result)
 
-        return admin.database().ref("/sorted-v4/"+req.body.groupId).child(req.body.weekName).update(result)
+        // return admin.database().ref("/sorted-v4/"+groupId).child(weekName).update(result)
     })  
 })
 
@@ -198,7 +219,7 @@ function run_procastinatorNotification() {
     admin.database().ref('groups').once('value', (snapshot) => {
         const groupsData = snapshot.val();
         for (const [groupName, submission] of Object.entries(groupsData)) {
-            const ref_groupWeekSubmissions = "incoming-v3/" + groupName +"/"+ getDBRefOfCurrentWeekName()
+            const ref_groupWeekSubmissions = "incoming-v4/" + groupName +"/"+ getDBRefOfCurrentWeekName()
             console.log(ref_groupWeekSubmissions)
             admin.database().ref(ref_groupWeekSubmissions).once('value', (snapshot) => { })
             .then((snapshot) => {
@@ -254,18 +275,18 @@ function runSort(snapshot, location, key) {
     return admin.database().ref(location).child(key).update(groups)
 }
 
-function processLateSubmission(snapshot, groupId, weekName, day) {
+function processLateSubmission(snapshot, writeLocation) {
     const original = snapshot.after.val()
-    const ref_dayBeingAdded = "sorted-v3/"+groupId+"/"+weekName+"/"+day
-    console.log(ref_dayBeingAdded)
-    return admin.database().ref(ref_dayBeingAdded).once('value', (snapshot) => {
+    
+    console.log(writeLocation)
+    return admin.database().ref(writeLocation).once('value', (snapshot) => {
         const data = snapshot.val()
         var existingCount = 0
         if (data != null) {
             existingCount = data.length
         }
-        const newPlayerRef = ref_dayBeingAdded+"/"+existingCount
-        const newPlayerObj = {"name": original.name, "phoneNumber": original.phoneNumber}
+        const newPlayerRef = writeLocation+"/"+existingCount
+        const newPlayerObj = {"name": original.name, "phoneNumber": original.phoneNumber}//todo
         console.log("adding player " + JSON.stringify(newPlayerObj) + " to " + newPlayerRef)
         admin.database().ref(newPlayerRef).set(newPlayerObj)
     })
@@ -449,33 +470,30 @@ function tennisSortBySkill(data, playerInfoMap) {
     //make a map for each day with key as name of day
     const daysAvailable = {}
     
-    for (const [key, item] of Object.entries(uniqueData)) {
+    for (const [key, playerSubmission] of Object.entries(uniqueData)) {
         //for each nonnull choice, add item to map using choice as key
         // console.log("item: " + JSON.stringify(item))
-        if (item.firstChoice != "") {
-            addChoiceToDay(item, item.firstChoice);
-        }
-        if (item.secondChoice != "") {
-            addChoiceToDay(item, item.secondChoice);
-        }
-        if (item.thirdChoice != "") {
-            addChoiceToDay(item, item.thirdChoice);
-        }
-        if (item.fourthChoice != "") {
-            addChoiceToDay(item, item.fourthChoice);
-        }
-        if (item.fifthChoice != "") {
-            addChoiceToDay(item, item.fifthChoice);
+        const choices = playerSubmission.choices;
+        for (let index = 0; index < choices.length; index++) {
+            const choice = choices[index];
+            addChoiceToDay(playerSubmission, choice)
         }
     }
     // console.log(JSON.stringify(daysAvailable))
 
 
-    function addChoiceToDay(item, key) {
-        const utr = playerInfoMap[item.phoneNumber].utr
-        const goodwill = playerInfoMap[item.phoneNumber].goodwill
+    function addChoiceToDay(playerSubmission, key) {
+        console.log("playerInfoMap")
+        console.log(JSON.stringify(playerInfoMap))
+        const ranking = playerInfoMap[playerSubmission.phoneNumber]
+        let utr = 40
+        let goodwill = 1
+        if (ranking != null) {
+            utr = ranking.utr
+            ranking.goodwill
+        }
         daysAvailable[key] = daysAvailable[key] ?? [];
-        daysAvailable[key].push({"name": item.name, "phoneNumber": item.phoneNumber, "maxDays": item.maxDays, "utr": utr, "goodwill": goodwill});
+        daysAvailable[key].push({"name": playerSubmission.name, "phoneNumber": playerSubmission.phoneNumber, "maxDays": playerSubmission.maxDays, "utr": utr, "goodwill": goodwill});
     }
 
     const weeklyMatches = {}
@@ -487,23 +505,8 @@ function tennisSortBySkill(data, playerInfoMap) {
         const key = Object.keys(topComboOfWeek)[0]
         delete daysAvailable[key]
         Object.assign(weeklyMatches, topComboOfWeek)
-        //todo reduce goodwill for chosen players
-        for (let index = 0; index < topComboOfWeek[key].players.length; index++) {
-            const chosenPlayer = topComboOfWeek[key].players[index];
-            for(const [key, day] of Object.entries(daysAvailable)) {
-                for(const [key, player] of Object.entries(day)) {
-                     if(player.phoneNumber === chosenPlayer.phoneNumber) {
-                        player.maxDays = chosenPlayer.maxDays -1
-                        if(player.maxDays == 0) {
-                            player.goodwill = 0
-                        } else {
-                            player.goodwill = (player.goodwill)/2
-                        }
-                        console.log(chosenPlayer.name + " goodwill reduced by half")
-                     }
-                }
-            }
-        }
+        // topComboOfWeek[key].players.length
+        reduceGoodwillForChosenPlayers(topComboOfWeek, key);
     }
 
     
@@ -514,18 +517,39 @@ function tennisSortBySkill(data, playerInfoMap) {
     return weeklyMatches;
 
 
+    function reduceGoodwillForChosenPlayers(topComboOfWeek, key) {
+        let upperBound = topComboOfWeek[key].players.length < 4 ? topComboOfWeek[key].players.length : 4
+        for (let index = 0; index < upperBound; index++) {
+            const chosenPlayer = topComboOfWeek[key].players[index];
+            for (const [key, day] of Object.entries(daysAvailable)) {
+                var playerCount = 0;
+                for (const [key, player] of Object.entries(day)) {
+                    if (player.phoneNumber === chosenPlayer.phoneNumber) {
+                        player.maxDays = chosenPlayer.maxDays - 1;
+                        if (player.maxDays == 0) {
+                            player.goodwill = 0;
+                        } else {
+                            player.goodwill = (player.goodwill) / 2;
+                        }
+                        console.log(chosenPlayer.name + " goodwill reduced by half");
+                    }
+                }
+            }
+        }
+    }
+
     function findBestMatches(daysAvailable) {
         
         const allCombos = new Map();
         //find all combinations for each day
-        for (const [key, item] of Object.entries(daysAvailable)) {//daysAvailable = {"Monday": {name: "5412078581", "utr": 5.5}}
+        for (const [key, allPlayers] of Object.entries(daysAvailable)) {//daysAvailable = {"Monday": [{name: "5412078581", "utr": 5.5}]}
             var combos
-            if (item.length < 4) {
-                combos = [item];
+            if (allPlayers.length < 4) {
+                combos = [allPlayers];
             } else {
-                combos =  Combinations(item, 4); //item = {name: "5412078581", "utr": 5.5}
+                combos =  Combinations(allPlayers, 4); //item = {name: "5412078581", "utr": 5.5}
             }
-            allCombos.set(key, sortCombosByHighestQuality(combos)); //allCombos = {"Monday": [{"1,4,2,3"}, {"1,3,2,5"}], "Tuesday"...}
+            allCombos.set(key, sortCombosByHighestQuality(combos, allPlayers)); //allCombos = {"Monday": [{"1,4,2,3"}, {"1,3,2,5"}], "Tuesday"...}
         }
 
         var topComboOfWeek; // {"Monday": {"1,4,2,3"}}
@@ -547,14 +571,17 @@ function tennisSortBySkill(data, playerInfoMap) {
 
 }
 
-function sortCombosByHighestQuality(combinations) {
+function sortCombosByHighestQuality(combinations, allSignupsForDay) {
     var matchesByQuality = [];
     for (let index = 0; index < combinations.length; index++) {
         const players = combinations[index];
+        //if less than 4 players for a day, then there are no combos to sort
         if (players.length < 4) {
             matchesByQuality.push({ "players": players, stats: { "quality": -1, "closeness": 0, "balance": 0, "bias": 0 } })
         } else {
+            let alternates = allSignupsForDay.filter(x => !players.includes(x))
             const sortedPlayers = players.sortBy(i => i.utr);
+            sortedPlayers.push.apply(sortedPlayers, alternates)
             const teamAutr = sortedPlayers[0].utr + sortedPlayers[3].utr
             const teamButr = sortedPlayers[1].utr + sortedPlayers[2].utr
             const balance = outOfPossible(13, Math.abs(teamAutr - teamButr))
