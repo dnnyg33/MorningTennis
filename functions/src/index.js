@@ -4,44 +4,44 @@ admin.initializeApp()
 // // Create and Deploy Your First Cloud Functions
 // // https://firebase.google.com/docs/functions/write-firebase-functions
 //
-exports.sortWeek = functions.database.ref("/incoming/{day}").onWrite((snapshot, context) => {
-    return runSort(snapshot, "/sorted", context.params.day);
-});
 
-exports.sortWeekv2 = functions.database.ref("/incoming-v2/{day}").onWrite((snapshot, context) => {
-    return runSort(snapshot, "/sorted-v2", context.params.day);
-});
-
-exports.sortWeekv3 = functions.database.ref("/incoming-v3/{groupId}/{day}").onWrite((snapshot, context) => {
-    return runSort(snapshot, "/sorted-v3/"+context.params.groupId, context.params.day);
+exports.sortWeekv3 = functions.database.ref("/incoming-v4/{groupId}/{day}").onWrite((snapshot, context) => {
+    return runSort(snapshot, "/sorted-v3/" + context.params.groupId, context.params.day);
 });
 
 exports.sortWeekv4 = functions.database.ref("/incoming-v4/{groupId}/{day}").onWrite((snapshot, context) => {
     admin.database().ref('member_rankings').child(context.params.groupId).once('value', async (memberRankingsSnapshot) => {
-        const ranking = memberRankingsSnapshot.val();   
+        const ranking = memberRankingsSnapshot.val();
         const incomingSubmissions = snapshot.after.val()
-        const writeLocation = "/sorted-v4/"+context.params.groupId
+        const writeLocation = "/sorted-v4/" + context.params.groupId
         const weekNameKey = context.params.day;
         const result = tennisSortBySkill(incomingSubmissions, ranking)
         console.log("writing result " + JSON.stringify(result))
         return admin.database().ref(writeLocation).child(weekNameKey).set(result)
-    })  
+    })
 })
- 
+
 exports.lateSubmissions = functions.database.ref("late-submissions/{groupId}/{weekName}/{day}/{pushKey}").onWrite((snapshot, context) => {
     const groupId = context.params.groupId;
     const weekName = context.params.weekName;
     const day = context.params.day
-    const writeLocationV3 = "sorted-v3/"+groupId+"/"+weekName+"/"+day
-    const writeLocationV4 = "sorted-v4/"+groupId+"/"+weekName+"/"+day+"/players/"
-    return processLateSubmission(snapshot, writeLocationV3).then(() => 
-    processLateSubmission(snapshot, writeLocationV4))    
+    const writeLocationV3 = "sorted-v3/" + groupId + "/" + weekName + "/" + day
+    const writeLocationV4 = "sorted-v4/" + groupId + "/" + weekName + "/" + day + "/players/"
+    return processLateSubmission(snapshot, writeLocationV3).then(() =>
+        processLateSubmission(snapshot, writeLocationV4))
 })
 
 exports.testSendNotification = functions.https.onRequest((req, res) => {
-    console.log(req.body)
-    run_rsvpNotification(req.body, res)
-    res.end("End")
+    admin.database().ref("approvedNumbers").once('value', (snapshot) => {
+        //loop results
+        const allUsers = snapshot.val();
+        console.log(JSON.stringify(allUsers))
+        for (const [key, groupValue] of Object.entries(allUsers)) {
+            groupValue.phoneNumber = key;
+            admin.database().ref("approvedNumbers").child(key).update(groupValue);
+        }
+        res.end();
+    })
 })
 
 exports.testReminder = functions.https.onRequest((req, res) => {
@@ -53,18 +53,84 @@ exports.testSort = functions.https.onRequest((req, res) => {
     console.log(req.query)
     const groupId = req.query["groupId"];
     const weekName = req.query["weekName"];
-    console.log(groupId+" "+weekName);
-    admin.database().ref('member_rankings').child(groupId).once('value', async (snapshot) => {
-        const ranking = snapshot.val();   
-        const result = tennisSortBySkill(req.body[weekName], ranking)
-        res.send(result)
+    console.log(groupId + " " + weekName);
+    const result = tennisSort(req.body[weekName])
+    res.send(result)
+    // admin.database().ref('member_rankings').child(groupId).once('value', async (snapshot) => {
+        // const ranking = snapshot.val();
+        // const result = tennisSortBySkill(req.body[weekName], ranking)
+        // res.send(result)
 
         // return admin.database().ref("/sorted-v4/"+groupId).child(weekName).update(result)
-    })  
+    // })
+})
+
+exports.createUser = functions.https.onRequest((req, res) => {
+    const body = req.body.data;
+    console.log(JSON.stringify(body))
+    //check for existing user with id as phone number
+    //if none, query all objects to see if email is in any user objects
+    admin.database().ref("approvedNumbers").once('value', (snapshot) => {
+        //loop results
+        const allUsers = snapshot.val();
+        for (const [key, groupValue] of Object.entries(allUsers)) {
+            if ((body.phoneNumber != null && body.phoneNumber == groupValue.phoneNumber) ||
+                (body.email != null && body.email == groupValue.email)) {
+                groupValue.name = body.name;
+                groupValue.email = body.email;
+                groupValue.phoneNumber = body.phoneNumber;
+                groupValue.tokens = body.tokens;
+                groupValue.suspended = body.suspended;
+                groupValue.groups = body.groups;
+                admin.database().ref("approvedNumbers").child(key).update(groupValue);
+                res.status(200).send({ "data": groupValue });
+                return;
+            }
+        }
+
+        const newUser = {
+            name: body.name,
+            email: body.email,
+            phoneNumber: body.phoneNumber
+        };
+        admin.database().ref("approvedNumbers").child(body.firebaseId).set(newUser);
+        res.status(201).send({ "data": newUser });
+    })
+});
+
+exports.joinGroupRequest = functions.https.onRequest((req, res) => {
+    const body = req.body.data;
+    admin.database().ref("groups-v2").child(body.groupId).once('value', (snapshot) => {
+        const group = snapshot.val();
+        if (group == null) {
+            res.status(400).send({ "data": { "result": "failure", "reason": "group not found" } })
+            return;
+        }
+        if (group.visibility == "public") {
+            //append groupId to user's list of groups
+            admin.database().ref("approvedNumbers").child(body.userId).child('groups').once('value', (snapshotGroups) => {
+                var groups = snapshotGroups.val()
+                if(groups == null) {
+                    groups = []
+                }
+                if (groups.includes(body.groupId)) {
+                    res.send({ "data": { "result": "failure", "reason": "already in group" } })
+                } else {
+                    groups.push(body.groupId)
+                    admin.database().ref("approvedNumbers").child(body.userId).child("groups").update(groups)
+                    res.send({ "data": { "result": "success" } })
+                }
+            })
+        } else if (group.visibility == "private") {
+            const request = {"groupId": body.groupId, "userId": body.userId, "status": "pending"}
+            admin.database().ref("joinRequest").push(request)
+            res.send({ "data": { "result": "pending" } })
+        }
+    }).catch((error) => { console.error(error); res.send(500, { "data": { "result": "failure", "reason": error } }); });
 })
 
 
-exports.addUserToGroup =  functions.https.onRequest((req, res) => {
+exports.addUserToGroup = functions.https.onRequest((req, res) => {
     const body = req.body.data;
     console.log("body: " + JSON.stringify(body))
     //check that adder is admin
@@ -77,27 +143,27 @@ exports.addUserToGroup =  functions.https.onRequest((req, res) => {
         admin.database().ref("approvedNumbers").child(body.userId).once('value', (snapshot) => {
             var user = snapshot.val()
             if (user == null) {
-                var newUser = {"name":body.userName, "groups": [body.groupId]}
+                var newUser = { "name": body.userName, "groups": [body.groupId] }
                 admin.database().ref("approvedNumbers").child(body.userId).set(newUser)
-                res.send({"data": {"groupId": body.groupId, "userId": body.userId , "message" : "User created and added to group"}})
+                res.send({ "data": { "groupId": body.groupId, "userId": body.userId, "message": "User created and added to group" } })
             } else {
                 console.log("Found user: " + JSON.stringify(user))
                 if (user.groups == null) {
                     user.groups = [body.groupId];
                     console.log("User updated with group: " + JSON.stringify(user))
                     admin.database().ref("approvedNumbers").child(body.userId).update(user)
-                    res.send({"data": {"groupId": body.groupId, "userId": body.userId , "message" : "Existing user added to first group"}})
+                    res.send({ "data": { "groupId": body.groupId, "userId": body.userId, "message": "Existing user added to first group" } })
                 }
                 if (user.groups.includes(body.groupId)) {
-                    res.send({"data": {"groupId": body.groupId, "userId": body.userId , "message" : "User already in group"}})
+                    res.send({ "data": { "groupId": body.groupId, "userId": body.userId, "message": "User already in group" } })
                 } else {
                     user.groups.push(body.groupId)
                     console.log(user.groups)
                     admin.database().ref("approvedNumbers").child(body.userId).update(user)
-                    res.send({"data": {"groupId": body.groupId, "userId": body.userId , "message" : "Existing user added to new group"}})
+                    res.send({ "data": { "groupId": body.groupId, "userId": body.userId, "message": "Existing user added to new group" } })
                 }
             }
-            
+
         })
     })
 })
@@ -124,7 +190,7 @@ exports.scheduleReminderNotificationSunday = functions.pubsub.schedule('30 20 * 
         run_reminderNotificationsForAllGroups()
     })
 
-    //reminder that schedule is about to close
+//reminder that schedule is about to close
 exports.scheduleClosingNotification = functions.pubsub.schedule('00 19 * * SUN')
     .timeZone('America/Denver')
     .onRun((context) => {
@@ -132,33 +198,33 @@ exports.scheduleClosingNotification = functions.pubsub.schedule('00 19 * * SUN')
 
     });
 
-    //reminder to submit schedule
+//reminder to submit schedule
 exports.scheduleProcrastinatorNotification = functions.pubsub.schedule('00 11 * * SUN,SAT')
     .timeZone('America/Denver')
     .onRun((context) => {
         run_procastinatorNotification()
     })
 
-    //actually close schedule
+//actually close schedule
 exports.scheduleCloseScheduleCommand = functions.pubsub.schedule('05 20 * * SUN')
     .timeZone('America/Denver')
-    .onRun((context) =>  {
+    .onRun((context) => {
         admin.database().ref('groups-v2').child('provo').child('scheduleIsOpen').set(false)
         admin.database().ref('groups').child('provo').child('scheduleIsOpen').set(false)
         admin.database().ref('groups').child('sunpro').child('scheduleIsOpen').set(false)
         admin.database().ref('groups-v2').child('sunpro').child('scheduleIsOpen').set(false)
     })
 
-    //actually open schedule
+//actually open schedule
 exports.scheduleOpenNotification = functions.pubsub.schedule('00 8 * * FRI')
-.timeZone('America/Denver')
-.onRun((context) => {
-    admin.database().ref('groups').child('provo').child('scheduleIsOpen').set(true)
-    admin.database().ref('groups-v2').child('provo').child('scheduleIsOpen').set(true)
-    admin.database().ref('groups').child('sunpro').child('scheduleIsOpen').set(true)
-    admin.database().ref('groups-v2').child('sunpro').child('scheduleIsOpen').set(true)
-    run_scheduleNotification(null, "Schedule now open", "You can now sign up for next week's schedule in the app.")
-});
+    .timeZone('America/Denver')
+    .onRun((context) => {
+        admin.database().ref('groups').child('provo').child('scheduleIsOpen').set(true)
+        admin.database().ref('groups-v2').child('provo').child('scheduleIsOpen').set(true)
+        admin.database().ref('groups').child('sunpro').child('scheduleIsOpen').set(true)
+        admin.database().ref('groups-v2').child('sunpro').child('scheduleIsOpen').set(true)
+        run_scheduleNotification(null, "Schedule now open", "You can now sign up for next week's schedule in the app.")
+    });
 
 
 function run_reminderNotificationsForAllGroups() {
@@ -166,7 +232,7 @@ function run_reminderNotificationsForAllGroups() {
     let tomorrow = new Date()
     tomorrow.setDate(today.getDate() + 1)
     console.log(tomorrow)
-    const dayName = tomorrow.toLocaleString('en-us', { weekday: 'long', timeZone: 'America/Denver'})
+    const dayName = tomorrow.toLocaleString('en-us', { weekday: 'long', timeZone: 'America/Denver' })
     console.log("dayName is " + dayName)
     admin.database().ref('groups').once('value', async (snapshot) => {
         const data = snapshot.val();
@@ -185,7 +251,7 @@ function run_reminderNotificationsForAllGroups() {
                 var count = 0
                 var limit = 4
                 for (const [userKey, userValue] of Object.entries(data)) {
-                    console.log("isComing for " + userValue.name +": " + userValue.isComing)
+                    console.log("isComing for " + userValue.name + ": " + userValue.isComing)
                     if (count == limit) break;
                     if (userValue.isComing != null) continue;
                     count++
@@ -193,7 +259,7 @@ function run_reminderNotificationsForAllGroups() {
                     phoneNumbers.push(cleanNumber.toString())
                 }
                 console.log(phoneNumbers)
-                if(phoneNumbers.length == 0) {
+                if (phoneNumbers.length == 0) {
                     console.log("No blank RSVPs for group " + key)
                 } else {
                     console.log(phoneNumbers.length + " blank RSVPs")
@@ -201,7 +267,7 @@ function run_reminderNotificationsForAllGroups() {
                         const message = {
                             "notification": {
                                 "title": "Player reminder",
-                                "body": "You are scheduled to play tomorrow with "+ groupName +". Tap to RSVP now."
+                                "body": "You are scheduled to play tomorrow with " + groupName + ". Tap to RSVP now."
                             },
                             "tokens": registrationTokens,
                         };
@@ -219,47 +285,47 @@ function run_procastinatorNotification() {
     admin.database().ref('groups').once('value', (snapshot) => {
         const groupsData = snapshot.val();
         for (const [groupName, submission] of Object.entries(groupsData)) {
-            const ref_groupWeekSubmissions = "incoming-v4/" + groupName +"/"+ getDBRefOfCurrentWeekName()
+            const ref_groupWeekSubmissions = "incoming-v4/" + groupName + "/" + getDBRefOfCurrentWeekName()
             console.log(ref_groupWeekSubmissions)
             admin.database().ref(ref_groupWeekSubmissions).once('value', (snapshot) => { })
-            .then((snapshot) => {
-                const groupWeekSubmissions = snapshot.val()
-                if (groupWeekSubmissions == null) return;
-                var registeredNumbers = []
-                for (const [key, submission] of Object.entries(groupWeekSubmissions)) {
-                    registeredNumbers.push(submission.phoneNumber)
-                }
-    
-                admin.database().ref("approvedNumbers").once('value', (snapshot2) => {
-    
-                    const userData = snapshot2.val()
-                    //flatten users to list of phone numbers
-                    var allUsersInGroup = []
-                    for (const [userKey, userValue] of Object.entries(userData)) {
-                        if (userValue.groups != null && userValue.groups.includes(groupName)) {
-                            allUsersInGroup.push({"phoneNumber": userKey, "name": userValue.name})
-                        }
+                .then((snapshot) => {
+                    const groupWeekSubmissions = snapshot.val()
+                    if (groupWeekSubmissions == null) return;
+                    var registeredNumbers = []
+                    for (const [key, submission] of Object.entries(groupWeekSubmissions)) {
+                        registeredNumbers.push(submission.phoneNumber)
                     }
-    
-                    var procrastinators = allUsersInGroup.filter((user) => !registeredNumbers.includes(user.phoneNumber));
-                    console.log("procrastinators in group " + groupName)
-                    console.log(procrastinators)
-                    var numbersOnly = procrastinators.map((user) => user.phoneNumber)
-                    getNotificationGroup(numbersOnly).then(registrationTokens => {
-                        const message = {
-                            "notification": {
-                                "title": "Sign up for next week",
-                                "body": "You have not yet signed up for next week. The schedule closes at 8pm Sunday."
-                            },
-                            "tokens": registrationTokens,
-                        };
-                        sendNotificationsToGroup(message, registrationTokens, null)
-                    });
-    
+
+                    admin.database().ref("approvedNumbers").once('value', (snapshot2) => {
+
+                        const userData = snapshot2.val()
+                        //flatten users to list of phone numbers
+                        var allUsersInGroup = []
+                        for (const [userKey, userValue] of Object.entries(userData)) {
+                            if (userValue.groups != null && userValue.groups.includes(groupName)) {
+                                allUsersInGroup.push({ "phoneNumber": userKey, "name": userValue.name })
+                            }
+                        }
+
+                        var procrastinators = allUsersInGroup.filter((user) => !registeredNumbers.includes(user.phoneNumber));
+                        console.log("procrastinators in group " + groupName)
+                        console.log(procrastinators)
+                        var numbersOnly = procrastinators.map((user) => user.phoneNumber)
+                        getNotificationGroup(numbersOnly).then(registrationTokens => {
+                            const message = {
+                                "notification": {
+                                    "title": "Sign up for next week",
+                                    "body": "You have not yet signed up for next week. The schedule closes at 8pm Sunday."
+                                },
+                                "tokens": registrationTokens,
+                            };
+                            sendNotificationsToGroup(message, registrationTokens, null)
+                        });
+
+                    })
+
+
                 })
-    
-    
-            })
         }
     })
 }
@@ -272,12 +338,12 @@ function runSort(snapshot, location, key) {
     const original = snapshot.after.val()
 
     var groups = tennisSort(original)
-    return admin.database().ref(location).child(key).update(groups)
+    return admin.database().ref(location).child(key).set(groups)
 }
 
 function processLateSubmission(snapshot, writeLocation) {
     const original = snapshot.after.val()
-    
+
     console.log(writeLocation)
     return admin.database().ref(writeLocation).once('value', (snapshot) => {
         const data = snapshot.val()
@@ -285,8 +351,8 @@ function processLateSubmission(snapshot, writeLocation) {
         if (data != null) {
             existingCount = data.length
         }
-        const newPlayerRef = writeLocation+"/"+existingCount
-        const newPlayerObj = {"name": original.name, "phoneNumber": original.phoneNumber}//todo
+        const newPlayerRef = writeLocation + "/" + existingCount
+        const newPlayerObj = { "name": original.name, "phoneNumber": original.phoneNumber }//todo
         console.log("adding player " + JSON.stringify(newPlayerObj) + " to " + newPlayerRef)
         admin.database().ref(newPlayerRef).set(newPlayerObj)
     })
@@ -312,7 +378,7 @@ function run_rsvpNotification(req, res) {
     const weekPath = req.weekPath
     const dayName = req.dayName
     const today = new Date()
-    const offsetHours = req.offsetHours? req.offsetHours : -6 
+    const offsetHours = req.offsetHours ? req.offsetHours : -6
     const dayNumber = dayOfWeekAsInteger(dayName)
     //if rsvp is in the past, just break
     if (dayNumber < new Date().getDay()) {
@@ -321,8 +387,8 @@ function run_rsvpNotification(req, res) {
     console.log(dayNumber)
     console.log(today.getHours() + offsetHours)
     //if change is last minute, notify everyone
-    if ((dayNumber - today.getDay() == 1 && today.getHours() + offsetHours >= 19) || dayNumber - today.getDay() == 0)  {
-        
+    if ((dayNumber - today.getDay() == 1 && today.getHours() + offsetHours >= 19) || dayNumber - today.getDay() == 0) {
+
         admin.database().ref(weekPath).once('value', (snapshot) => {
             const weekData = snapshot.val()
             console.log("weekData: " + JSON.stringify(weekData))
@@ -438,38 +504,38 @@ function sendNotificationsToGroup(message, registrationTokens, res) {
 }
 
 
-  function Combinations( arr, r ) {
+function Combinations(arr, r) {
     // To avoid object referencing, cloning the array.
     arr = arr && arr.slice() || [];
 
     var len = arr.length;
 
-    if( !len || r > len || !r )
-        return [ [] ];
-    else if( r === len ) 
-        return [ arr ];
+    if (!len || r > len || !r)
+        return [[]];
+    else if (r === len)
+        return [arr];
 
-    if( r === len ) return arr.reduce( ( x, v ) => {
-        x.push( [ v ] );
+    if (r === len) return arr.reduce((x, v) => {
+        x.push([v]);
 
         return x;
-    }, [] );
+    }, []);
 
     var head = arr.shift();
 
-    return Combinations( arr, r - 1 ).map( x => {
-        x.unshift( head );
+    return Combinations(arr, r - 1).map(x => {
+        x.unshift(head);
 
         return x;
-    } ).concat( Combinations( arr, r ) );
+    }).concat(Combinations(arr, r));
 }
- 
+
 
 function tennisSortBySkill(data, playerInfoMap) {
     let uniqueData = removeDuplicates(data)
     //make a map for each day with key as name of day
     const daysAvailable = {}
-    
+
     for (const [key, playerSubmission] of Object.entries(uniqueData)) {
         //for each nonnull choice, add item to map using choice as key
         // console.log("item: " + JSON.stringify(item))
@@ -493,11 +559,11 @@ function tennisSortBySkill(data, playerInfoMap) {
             ranking.goodwill
         }
         daysAvailable[key] = daysAvailable[key] ?? [];
-        daysAvailable[key].push({"name": playerSubmission.name, "phoneNumber": playerSubmission.phoneNumber, "maxDays": playerSubmission.maxDays, "utr": utr, "goodwill": goodwill});
+        daysAvailable[key].push({ "name": playerSubmission.name, "phoneNumber": playerSubmission.phoneNumber, "maxDays": playerSubmission.maxDays, "utr": utr, "goodwill": goodwill });
     }
 
     const weeklyMatches = {}
-    while(Object.keys(daysAvailable).length > 0) {
+    while (Object.keys(daysAvailable).length > 0) {
         const topComboOfWeek = findBestMatches(daysAvailable);
         if (topComboOfWeek == undefined) {
             break;
@@ -509,7 +575,7 @@ function tennisSortBySkill(data, playerInfoMap) {
         reduceGoodwillForChosenPlayers(topComboOfWeek, key);
     }
 
-    
+
     for (const [key, item] of Object.entries(weeklyMatches)) {
         console.log(key + "-" + getPlayerSummary(item.players)
             + " \n " + JSON.stringify(item.stats))
@@ -539,7 +605,7 @@ function tennisSortBySkill(data, playerInfoMap) {
     }
 
     function findBestMatches(daysAvailable) {
-        
+
         const allCombos = new Map();
         //find all combinations for each day
         for (const [key, allPlayers] of Object.entries(daysAvailable)) {//daysAvailable = {"Monday": [{name: "5412078581", "utr": 5.5}]}
@@ -547,7 +613,7 @@ function tennisSortBySkill(data, playerInfoMap) {
             if (allPlayers.length < 4) {
                 combos = [allPlayers];
             } else {
-                combos =  Combinations(allPlayers, 4); //item = {name: "5412078581", "utr": 5.5}
+                combos = Combinations(allPlayers, 4); //item = {name: "5412078581", "utr": 5.5}
             }
             allCombos.set(key, sortCombosByHighestQuality(combos, allPlayers)); //allCombos = {"Monday": [{"1,4,2,3"}, {"1,3,2,5"}], "Tuesday"...}
         }
@@ -556,16 +622,16 @@ function tennisSortBySkill(data, playerInfoMap) {
         var topComboOfWeekKey;
         for (const [key, dayCombos] of allCombos) {
             const topComboPerDay = dayCombos[0];
-            if(topComboOfWeek == undefined) {
-                topComboOfWeek = {[key]: topComboPerDay}
+            if (topComboOfWeek == undefined) {
+                topComboOfWeek = { [key]: topComboPerDay }
                 topComboOfWeekKey = key
             }
             else if (topComboPerDay.stats.quality > topComboOfWeek[topComboOfWeekKey].stats.quality) {
-                topComboOfWeek = {[key]: topComboPerDay};
+                topComboOfWeek = { [key]: topComboPerDay };
                 topComboOfWeekKey = key
             }
         }
-        
+
         return topComboOfWeek
     }
 
@@ -594,17 +660,17 @@ function sortCombosByHighestQuality(combinations, allSignupsForDay) {
     return matchesByQuality.sortBy(i => i.stats.quality);
 
     function calculateCloseness(array) {
-        return ((array[0].utr + array[1].utr + array[2].utr + array[3].utr) /4) - array[3].utr
-        
+        return ((array[0].utr + array[1].utr + array[2].utr + array[3].utr) / 4) - array[3].utr
+
     }
 
     function outOfPossible(possible, actual) {
         const outOf10 = possible - actual
         if (outOf10 <= 0) {
             return 1
-        } else return outOf10 / (possible/10)
+        } else return outOf10 / (possible / 10)
     }
-    
+
 }
 function getPlayerSummary(element) {
     if (element.length < 4) return ""
@@ -614,31 +680,36 @@ function getPlayerSummary(element) {
 
 
 function tennisSort(data) {
+    console.log("tennisSort")
+    console.log(JSON.stringify(data))
     let uniqueData = removeDuplicates(data)
-    let sorted1 = []
-    let sorted2 = []
-    let sorted3 = []
-    let sorted4 = []
-    let sorted5 = []
 
     var playerCount = 0
+    let sortedListsMap = {}
 
     for (const [key, item] of Object.entries(uniqueData)) {
         playerCount++
-        sorted1.push(buildSortedObjectFull(item.firstChoice, item, 1))
-        sorted2.unshift(buildSortedObjectFull(item.secondChoice, item, 2))
-        sorted3.push(buildSortedObjectFull(item.thirdChoice, item, 3))
-        sorted4.unshift(buildSortedObjectFull(item.fourthChoice, item, 4))
-        sorted5.push(buildSortedObjectFull(item.fifthChoice, item, 5))
+        for (let index = 0; index < item.choices.length; index++) {
+            const choice = item.choices[index];
+            const listName = "sorted"+index
+            const list = sortedListsMap[listName] ?? []
+            const object = buildSortedObjectFull(choice, item, index+1)
+            if(index%2 == 0) {
+                list.push(object)
+            } else {
+                list.unshift(object)
+            }
+            sortedListsMap[listName] = list
+        }
     }
 
-    let sortedList = [].concat(sorted1, sorted2, sorted3, sorted4, sorted5)
+    
+    let sortedList = [];
+    for (const [key, list] of Object.entries(sortedListsMap)) {
+        sortedList = sortedList.concat(list)
+    }
 
-    let monday = []
-    let tuesday = []
-    let wednesday = []
-    let thursday = []
-    let friday = []
+    let daysMap = {}
 
     sortedList.forEach(playerPreference => {
         let person = uniqueData.find(x => x.phoneNumber == playerPreference.phoneNumber)
@@ -650,37 +721,26 @@ function tennisSort(data) {
 
         let playerCountForDay = 8
         let addedAsAlternate = false
-        if (playerPreference.day == "Monday") {
-            monday.push(buildSortedObject(playerPreference))
-            addedAsAlternate = monday.length > playerCountForDay
-        } else if (playerPreference.day == "Tuesday") {
-            tuesday.push(buildSortedObject(playerPreference))
-            addedAsAlternate = tuesday.length > playerCountForDay
-        } else if (playerPreference.day == "Wednesday") {
-            wednesday.push(buildSortedObject(playerPreference))
-            addedAsAlternate = wednesday.length > playerCountForDay
-        } else if (playerPreference.day == "Thursday") {
-            thursday.push(buildSortedObject(playerPreference))
-            addedAsAlternate = thursday.length > playerCountForDay
-        } else if (playerPreference.day == "Friday") {
-            friday.push(buildSortedObject(playerPreference))
-            addedAsAlternate = friday.length > playerCountForDay
-        } else {
-            //skip
-        }
+        let day = daysMap[playerPreference.day] ?? []
+        day.push(buildSortedObject(playerPreference))
+        daysMap[playerPreference.day] = day
+
         if (!hasReachedMaxDays && !addedAsAlternate) {
             person.scheduledDays++
         }
     })
 
-    return {
-        "playerCount": playerCount,
-        "Monday": monday,
-        "Tuesday": tuesday,
-        "Wednesday": wednesday,
-        "Thursday": thursday,
-        "Friday": friday
-    }
+    // const { Monday, Tuesday, Wednesday, Thursday, Friday } = daysMap
+    
+    return daysMap
+    // {
+    //     "playerCount": playerCount,
+    //     Monday,
+    //     Tuesday,
+    //     Wednesday,
+    //     Thursday, 
+    //     Friday
+    // }
 }
 
 function hasNonFoursome(length) {
@@ -688,17 +748,17 @@ function hasNonFoursome(length) {
 }
 
 function removeDuplicates(data) {
-    var phoneNumbers = []
+    var firebaseId = []
     var uniquePlayers = []
     //iterate through data 
     for (const [key, item] of Object.entries(data)) {
-        let cleanNumber = item.phoneNumber.toString().replace(/\D/g, '')
-        if (phoneNumbers.includes(cleanNumber)) {
-            console.log("phone numbers includes: " + cleanNumber)
-            uniquePlayers = uniquePlayers.filter(f => cleanNumber !== f.phoneNumber.toString().replace(/\D/g, ''))
+        let cleanNumber = item.firebaseId.toString().replace(/\D/g, '')
+        if (firebaseId.includes(cleanNumber)) {
+            console.log("firebaseIds include: " + cleanNumber)
+            uniquePlayers = uniquePlayers.filter(f => cleanNumber !== f.firebaseId.toString().replace(/\D/g, ''))
         }
         item.scheduledDays = 0
-        phoneNumbers.push(cleanNumber)
+        firebaseId.push(cleanNumber)
         uniquePlayers.push(item)
 
 
@@ -731,7 +791,7 @@ function getDBRefOfCurrentWeekName() {
     var diff = 0;
     if (today.getDay() == 0) {
         diff = 1 //sunday
-    } else if(today.getDay() == 6) {
+    } else if (today.getDay() == 6) {
         diff = 2 //saturday
     } else {
         diff = -1 * (today.getDay() - 1)
@@ -753,14 +813,14 @@ function dayOfWeekAsInteger(day) {
     return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].indexOf(day);
 }
 
-Array.prototype.sortBy = function(callback) {
+Array.prototype.sortBy = function (callback) {
     return this.sort((a, b) => callback(b) - callback(a))
-  }
+}
 
-  Array.prototype.sum = function() {
-    return this.reduce(function(a, b) {return a+b});
+Array.prototype.sum = function () {
+    return this.reduce(function (a, b) { return a + b });
 };
 
-Array.prototype.avg = function() {
-    return this.sum()/this.length;
+Array.prototype.avg = function () {
+    return this.sum() / this.length;
 };
