@@ -10,6 +10,8 @@ exports.sortWeekv3 = functions.database.ref("/incoming-v4/{groupId}/{day}").onWr
 });
 
 exports.sortWeekv4 = functions.database.ref("/incoming-v4/{groupId}/{day}").onWrite((snapshot, context) => {
+    admin.database().ref('groups-v2').child(context.params.groupId).child("scheduleIsBuilding").set(true);
+
     admin.database().ref('member_rankings').child(context.params.groupId).once('value', async (memberRankingsSnapshot) => {
         const ranking = memberRankingsSnapshot.val();
         const incomingSubmissions = snapshot.after.val()
@@ -17,6 +19,7 @@ exports.sortWeekv4 = functions.database.ref("/incoming-v4/{groupId}/{day}").onWr
         const weekNameKey = context.params.day;
         const result = tennisSortBySkill(incomingSubmissions, ranking)
         console.log("writing result " + JSON.stringify(result))
+        admin.database().ref('groups-v2').child(context.params.groupId).child("scheduleIsBuilding").set(false);
         return admin.database().ref(writeLocation).child(weekNameKey).set(result)
     })
 })
@@ -57,11 +60,11 @@ exports.testSort = functions.https.onRequest((req, res) => {
     const result = tennisSort(req.body[weekName])
     res.send(result)
     // admin.database().ref('member_rankings').child(groupId).once('value', async (snapshot) => {
-        // const ranking = snapshot.val();
-        // const result = tennisSortBySkill(req.body[weekName], ranking)
-        // res.send(result)
+    // const ranking = snapshot.val();
+    // const result = tennisSortBySkill(req.body[weekName], ranking)
+    // res.send(result)
 
-        // return admin.database().ref("/sorted-v4/"+groupId).child(weekName).update(result)
+    // return admin.database().ref("/sorted-v4/"+groupId).child(weekName).update(result)
     // })
 })
 
@@ -110,7 +113,7 @@ exports.joinGroupRequest = functions.https.onRequest((req, res) => {
             //append groupId to user's list of groups
             admin.database().ref("approvedNumbers").child(body.userId).child('groups').once('value', (snapshotGroups) => {
                 var groups = snapshotGroups.val()
-                if(groups == null) {
+                if (groups == null) {
                     groups = []
                 }
                 if (groups.includes(body.groupId)) {
@@ -122,9 +125,13 @@ exports.joinGroupRequest = functions.https.onRequest((req, res) => {
                 }
             })
         } else if (group.visibility == "private") {
-            const request = {"groupId": body.groupId, "userId": body.userId, "status": "pending"}
-            admin.database().ref("joinRequest").push(request)
+            const request = {
+                "userId": body.userId, "status": "pending", "dateInitiated": new Date().getTime()
+            }
+            admin.database().ref("joinRequests").child(body.groupId).push(request)
             res.send({ "data": { "result": "pending" } })
+        } else if (group.visibility == "unlisted") {
+            //TODO How can this happen?
         }
     }).catch((error) => { console.error(error); res.send(500, { "data": { "result": "failure", "reason": error } }); });
 })
@@ -167,6 +174,74 @@ exports.addUserToGroup = functions.https.onRequest((req, res) => {
         })
     })
 })
+
+exports.deleteAccount = functions.https.onRequest((req, res) => {
+    const db = admin.database();
+    const body = req.body.data;
+    const removedLog = []
+    const promises = []
+    const usersPromise = admin.database().ref("approvedNumbers").child(body.userId).once('value', (snapshot) => {
+        const user = snapshot.val()
+        console.log("user: " + JSON.stringify(user))
+        if (user != null && user.groups != null) {
+            user.groups.forEach(group => {
+                console.log("group: " + group)
+                //remove as admin
+                const adminPromise = db.ref("groups-v2").child(group).child("admins").once('value', (snapshot) => {
+                    const adminList = snapshot.val()
+                    console.log("adminList: " + JSON.stringify(adminList))
+                    for (const [key, value] of Object.entries(adminList)) {
+                        console.log("key: " + key + " value: " + value)
+                        if (value == body.userId) {
+                            delete adminList[key]
+                            console.log("adminList: " + JSON.stringify(adminList))
+                            removedLog.push("groups-v2." + group + ".admins." + key)
+                            db.ref("groups-v2").child(group).child("admins").set(adminList)
+                        }
+                    }
+                })
+                promises.push(adminPromise)
+                //remove member rankings for groups
+                removedLog.push("member_ranking." + group + "." + body.userId)
+                db.ref("member_rankings").child(group).child(body.userId).remove()
+
+                //remove join requests
+                const joinPromise = db.ref("joinRequests").child(group).once('value', (snapshot) => {
+                    const joinRequests = snapshot.val()
+                    if (joinRequests == null) return;
+                    for (const [key, request] of Object.entries(joinRequests)) {
+                        if (request.userId == body.userId) {
+                            db.ref("joinRequests").child(key).remove()
+                            removedLog.push("joinRequests." + key)
+                        }
+                    }
+                });
+                promises.push(joinPromise)
+            });
+        }
+    }).then(() => {
+        //remove actual user
+        db.ref("approvedNumbers").child(body.userId).remove()
+        removedLog.push("approvedNumbers." + body.userId)
+    });
+    promises.push(usersPromise)
+
+
+    //remove subscriptions
+    const subPromise = db.ref("subscriptions").once('value', (snapshot) => {
+        const subscriptions = snapshot.val()
+        for (const [key, subscription] of Object.entries(subscriptions)) {
+            if (subscription.userId == body.userId) {
+                db.ref("subscriptions").child(key).remove()
+                removedLog.push("subscription." + key)
+            }
+        }
+    });
+    promises.push(subPromise)
+    Promise.all(promises).then(() => {
+        res.send({ "data": { "result": "success", "log": removedLog } })
+    });
+});
 
 //A notification for an alternate who has been promoted to player due to an RSVP event or for a last minute change.
 exports.sendRSVPUpdateNotification = functions.https.onCall((req, res) => {
@@ -691,10 +766,10 @@ function tennisSort(data) {
         playerCount++
         for (let index = 0; index < item.choices.length; index++) {
             const choice = item.choices[index];
-            const listName = "sorted"+index
+            const listName = "sorted" + index
             const list = sortedListsMap[listName] ?? []
-            const object = buildSortedObjectFull(choice, item, index+1)
-            if(index%2 == 0) {
+            const object = buildSortedObjectFull(choice, item, index + 1)
+            if (index % 2 == 0) {
                 list.push(object)
             } else {
                 list.unshift(object)
@@ -703,7 +778,7 @@ function tennisSort(data) {
         }
     }
 
-    
+
     let sortedList = [];
     for (const [key, list] of Object.entries(sortedListsMap)) {
         sortedList = sortedList.concat(list)
@@ -730,17 +805,8 @@ function tennisSort(data) {
         }
     })
 
-    // const { Monday, Tuesday, Wednesday, Thursday, Friday } = daysMap
-    
     return daysMap
-    // {
-    //     "playerCount": playerCount,
-    //     Monday,
-    //     Tuesday,
-    //     Wednesday,
-    //     Thursday, 
-    //     Friday
-    // }
+
 }
 
 function hasNonFoursome(length) {
