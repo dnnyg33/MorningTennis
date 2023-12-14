@@ -34,30 +34,18 @@ exports.lateSubmissions = functions.database.ref("late-submissions/{groupId}/{we
         processLateSubmission(snapshot, writeLocationV4))
 })
 
-exports.testSendNotification = functions.https.onRequest((req, res) => {
-    admin.database().ref("approvedNumbers").once('value', (snapshot) => {
-        //loop results
-        const allUsers = snapshot.val();
-        console.log(JSON.stringify(allUsers))
-        for (const [key, groupValue] of Object.entries(allUsers)) {
-            groupValue.phoneNumber = key;
-            admin.database().ref("approvedNumbers").child(key).update(groupValue);
-        }
-        res.end();
-    })
+exports.testSendNotification = functions.https.onRequest(async (req, res) => {
+    await run_procastinatorNotification()
+    res.end("Done")
 })
 
-exports.testReminder = functions.https.onRequest((req, res) => {
-    admin.database().ref('groups').child('provo').child('scheduleIsOpen').set(false)
-
-})
 
 exports.testSort = functions.https.onRequest((req, res) => {
     console.log(req.query)
     const groupId = req.query["groupId"];
     const weekName = req.query["weekName"];
     console.log(groupId + " " + weekName);
-    const result = tennisSort(req.body[weekName])
+    const result = tennisSortBySkill(req.body[weekName])
     res.send(result)
     // admin.database().ref('member_rankings').child(groupId).once('value', async (snapshot) => {
     // const ranking = snapshot.val();
@@ -76,17 +64,18 @@ exports.createUser = functions.https.onRequest((req, res) => {
     admin.database().ref("approvedNumbers").once('value', (snapshot) => {
         //loop results
         const allUsers = snapshot.val();
-        for (const [key, groupValue] of Object.entries(allUsers)) {
-            if ((body.phoneNumber != null && body.phoneNumber == groupValue.phoneNumber) ||
-                (body.email != null && body.email == groupValue.email)) {
-                groupValue.name = body.name;
-                groupValue.email = body.email;
-                groupValue.phoneNumber = body.phoneNumber;
-                groupValue.tokens = body.tokens;
-                groupValue.suspended = body.suspended;
-                groupValue.groups = body.groups;
-                admin.database().ref("approvedNumbers").child(key).update(groupValue);
-                res.status(200).send({ "data": groupValue });
+        for (const [key, serverUser] of Object.entries(allUsers)) {
+            if ((body.phoneNumber != null && body.phoneNumber == serverUser.phoneNumber) ||
+                (body.email != null && body.email == serverUser.email)) {
+                serverUser.name = body.name;
+                serverUser.email = body.email;
+                serverUser.phoneNumber = body.phoneNumber;
+                serverUser.tokens = body.tokens;
+                serverUser.suspended = body.suspended;
+                serverUser.firebaseId = body.firebaseId;
+                serverUser.groups = body.groups;
+                admin.database().ref("approvedNumbers").child(key).update(serverUser);
+                res.status(200).send({ "data": serverUser });
                 return;
             }
         }
@@ -128,13 +117,119 @@ exports.joinGroupRequest = functions.https.onRequest((req, res) => {
             const request = {
                 "userId": body.userId, "status": "pending", "dateInitiated": new Date().getTime()
             }
-            admin.database().ref("joinRequests").child(body.groupId).push(request)
+            
+            //find any existing, pending and delete
+            admin.database().ref("joinRequests").child(body.groupId).once('value', (snapshot) => {
+                const allRequests = snapshot.val();
+                for (const [key, request] of Object.entries(allRequests)) {
+                    if (request.userId == body.userId && request.status == "pending") {
+                        admin.database().ref("joinRequests").child(body.groupId).child(key).remove()
+                    }
+                }
+                //add new request
+                admin.database().ref("joinRequests").child(body.groupId).push(request)
+            });
+
             res.send({ "data": { "result": "pending" } })
         } else if (group.visibility == "unlisted") {
             //TODO How can this happen?
         }
     }).catch((error) => { console.error(error); res.send(500, { "data": { "result": "failure", "reason": error } }); });
 })
+
+exports.toggleAdmin = functions.https.onRequest((req, res) => {
+    const body = req.body.data;
+    //lookup group
+    admin.database().ref("groups-v2").child(body.groupId).once('value', (snapshot) => {
+        const group = snapshot.val();
+        if(group == null){
+            res.send(400, {"data": {"result": "failure", "reason": "group not found"}})
+            return;
+        }
+        //check that user is admin of group
+        if (!group.admins.includes(body.adminId)) {
+            res.send(401, {"data": {"result": "failure", "reason": "user is not admin"}})
+            return;
+        }
+
+        if (group.admins.includes(body.userId)) {
+            //make sure there are at least 2 admins before removing one
+            if (group.admins.length == 1) {
+                res.send(400, {"data": {"result": "failure", "reason": "cannot remove last admin"}})
+                return;
+            }
+            //remove userId from list of admins
+            const index = group.admins.indexOf(body.userId);
+            if (index > -1) {
+                group.admins.splice(index, 1);
+            }
+        } else {
+            //add userId to list of admins
+            group.admins.push(body.userId)
+        }
+        admin.database().ref("groups-v2").child(body.groupId).child("admins").set(group.admins)
+        res.send({"data": {"result": "success"}})
+    });
+})
+
+exports.approveJoinRequest = functions.https.onRequest((req, res) => {
+    const body = req.body.data;
+    admin.database().ref("joinRequests").child(body.groupId).child(body.requestId).once('value', (snapshot) => {
+        const request = snapshot.val()
+        if (request == null) {
+            res.send({ "data": { "result": "failure", "reason": "joinRequest not found" } })
+        } else {
+
+            admin.database().ref("groups-v2").child(body.groupId).child("admins").once('value', (snapshot) => {
+                //verify that user is admin
+                const admins = snapshot.val()
+                if(!Object.values(admins).includes(body.adminId)){
+                    console.log(body.adminId + "not found")
+                    res.sendStatus(401)
+                    return;
+                }
+            }).then(() => {
+
+                //change status of request to approved
+                request.status = "approved"
+                admin.database().ref("joinRequests").child(body.groupId).child(body.requestId).update(request)
+
+                //append groupId to user's list of groups
+                admin.database().ref("approvedNumbers").child(body.userId).child('groups').once('value', (snapshotGroups) => {
+                    var groups = snapshotGroups.val()
+                    if (groups == null) {
+                        groups = []
+                    }
+                    if (groups.includes(body.groupId)) {
+                        res.send({ "data": { "result": "failure", "reason": "already in group" } })
+                    } else {
+                        groups.push(body.groupId)
+                        admin.database().ref("approvedNumbers").child(body.userId).child("groups").update(groups)
+                        res.send({ "data": { "result": "success" } })
+                    }
+                })
+                //create member_ranking for this user
+                admin.database().ref("member_rankings").child(body.groupId).child(body.userId).set({ "utr": 40, "goodwill": 1 })
+
+                //send notification to user
+                admin.database().ref("approvedNumbers").child(body.userId).once('value', (snapshot) => {
+                    const user = snapshot.val()
+                    const message = {
+                        "notification": {
+                            "title": "You've been added to a group",
+                            "body": "You have been added to " + body.groupName + ". Tap to view the group."
+                        },
+                        "token": user.tokens[0],
+                    };
+                    getNotificationGroup([user.userId]).then(registrationTokens => {
+                        sendNotificationsToGroup(message, registrationTokens)
+                    })
+                })
+                
+            });
+        }
+    });
+});
 
 
 exports.addUserToGroup = functions.https.onRequest((req, res) => {
@@ -211,7 +306,7 @@ exports.deleteAccount = functions.https.onRequest((req, res) => {
                     if (joinRequests == null) return;
                     for (const [key, request] of Object.entries(joinRequests)) {
                         if (request.userId == body.userId) {
-                            db.ref("joinRequests").child(key).remove()
+                            db.ref("joinRequests").child(group).child(key).remove()
                             removedLog.push("joinRequests." + key)
                         }
                     }
@@ -239,30 +334,30 @@ exports.deleteAccount = functions.https.onRequest((req, res) => {
     });
     promises.push(subPromise)
     Promise.all(promises).then(() => {
+        console.log("removedLog: " + removedLog)
         res.send({ "data": { "result": "success", "log": removedLog } })
     });
 });
 
 //A notification for an alternate who has been promoted to player due to an RSVP event or for a last minute change.
-exports.sendRSVPUpdateNotification = functions.https.onCall((req, res) => {
+exports.sendRSVPUpdateNotification = functions.https.onCall(async (req, res) => {
 
     run_rsvpNotification(req, res)
-
 })
 
 
 //notification each day for players
 exports.scheduleReminderNotification = functions.pubsub.schedule('20 15 * * MON-THU')
     .timeZone('America/Denver')
-    .onRun((context) => {
-        run_reminderNotificationsForAllGroups()
+    .onRun(async (context) => {
+        await run_reminderNotificationsForAllGroups()
     })
 
 //notification for players on Monday, sent out late Sunday night after schedule closes
 exports.scheduleReminderNotificationSunday = functions.pubsub.schedule('30 20 * * SUN')
     .timeZone('America/Denver')
-    .onRun((context) => {
-        run_reminderNotificationsForAllGroups()
+    .onRun(async (context) =>  {
+        await run_reminderNotificationsForAllGroups()
     })
 
 //reminder that schedule is about to close
@@ -284,86 +379,102 @@ exports.scheduleProcrastinatorNotification = functions.pubsub.schedule('00 11 * 
 exports.scheduleCloseScheduleCommand = functions.pubsub.schedule('05 20 * * SUN')
     .timeZone('America/Denver')
     .onRun((context) => {
-        admin.database().ref('groups-v2').child('provo').child('scheduleIsOpen').set(false)
-        admin.database().ref('groups').child('provo').child('scheduleIsOpen').set(false)
-        admin.database().ref('groups').child('sunpro').child('scheduleIsOpen').set(false)
-        admin.database().ref('groups-v2').child('sunpro').child('scheduleIsOpen').set(false)
+        admin.database().ref("groups-v2").once('value', (snapshot) => {
+            const groupsData = snapshot.val();
+            for (const [groupName, submission] of Object.entries(groupsData)) {
+                admin.database().ref("groups-v2").child(groupName).child("scheduleIsOpen").set(false)
+            }
+            //TODO when schedule timing is dynamic, this will need to be specific to each group so that users aren't blasted for groups they aren't in
+            run_scheduleNotification(null, "Schedule now closed", "View and RSVP for next week's schedule in the app.")
+        });
     })
 
 //actually open schedule
 exports.scheduleOpenNotification = functions.pubsub.schedule('00 8 * * FRI')
     .timeZone('America/Denver')
     .onRun((context) => {
-        admin.database().ref('groups').child('provo').child('scheduleIsOpen').set(true)
-        admin.database().ref('groups-v2').child('provo').child('scheduleIsOpen').set(true)
-        admin.database().ref('groups').child('sunpro').child('scheduleIsOpen').set(true)
-        admin.database().ref('groups-v2').child('sunpro').child('scheduleIsOpen').set(true)
-        run_scheduleNotification(null, "Schedule now open", "You can now sign up for next week's schedule in the app.")
+        admin.database().ref("groups-v2").once('value', (snapshot) => {
+            const groupsData = snapshot.val();
+            for (const [groupName, submission] of Object.entries(groupsData)) {
+                admin.database().ref("groups-v2").child(groupName).child("scheduleIsOpen").set(true)
+            }
+            //TODO when schedule timing is dynamic, this will need to be specific to each group so that users aren't blasted for groups they aren't in
+            run_scheduleNotification(null, "Schedule now open", "You can now sign up for next week's schedule in the app.")
+        });
     });
 
 
-function run_reminderNotificationsForAllGroups() {
+async function run_reminderNotificationsForAllGroups() {
     const today = new Date()
     let tomorrow = new Date()
     tomorrow.setDate(today.getDate() + 1)
     console.log(tomorrow)
     const dayName = tomorrow.toLocaleString('en-us', { weekday: 'long', timeZone: 'America/Denver' })
     console.log("dayName is " + dayName)
-    admin.database().ref('groups').once('value', async (snapshot) => {
+    await admin.database().ref('groups').once('value', async (snapshot) => {
         const data = snapshot.val();
         for (const [key, groupValue] of Object.entries(data)) {
             const groupName = groupValue.name
-            const playersRef = "sorted-v3/" + key + "/" + getDBRefOfCurrentWeekName() + "/" + dayName
+            let playersRef;
+            if(groupValue.sortingAlgorithm == "timePreference"){
+                playersRef = "sorted-v3/" + key + "/" + getDBRefOfCurrentWeekName() + "/" + dayName
+            } else {
+                playersRef = "sorted-v4/" + key + "/" + getDBRefOfCurrentWeekName() + "/" + dayName + "/players"
+            }
+            
             console.log("\nBuilding notifications for " + playersRef)
-
-            await admin.database().ref(playersRef).once('value', async (snapshot) => {
-                const data = snapshot.val()
-                if (data == null) {
-                    console.log("No players for this group/day")
-                    return;
-                }
-                var phoneNumbers = []
-                var count = 0
-                var limit = 4
-                for (const [userKey, userValue] of Object.entries(data)) {
-                    console.log("isComing for " + userValue.name + ": " + userValue.isComing)
-                    if (count == limit) break;
-                    if (userValue.isComing != null) continue;
-                    count++
-                    let cleanNumber = userValue.phoneNumber.toString().replace(/\D/g, '')
-                    phoneNumbers.push(cleanNumber.toString())
-                }
-                console.log(phoneNumbers)
-                if (phoneNumbers.length == 0) {
-                    console.log("No blank RSVPs for group " + key)
-                } else {
-                    console.log(phoneNumbers.length + " blank RSVPs")
-                    await getNotificationGroup(phoneNumbers).then(registrationTokens => {
-                        const message = {
-                            "notification": {
-                                "title": "Player reminder",
-                                "body": "You are scheduled to play tomorrow with " + groupName + ". Tap to RSVP now."
-                            },
-                            "tokens": registrationTokens,
-                        };
-                        sendNotificationsToGroup(message, registrationTokens, null)
-                    })
-                }
-            });
+            await buildNotificationsForDay(playersRef, key, groupName);
         }
     })
+
+    async function buildNotificationsForDay(playersRef, key, groupName) {
+        await admin.database().ref(playersRef).once('value', async (snapshot) => {
+            const data = snapshot.val();
+            if (data == null) {
+                console.log("No players for this group/day");
+                return;
+            }
+            var phoneNumbers = [];
+            var count = 0;
+            var limit = 4;
+            for (const [userKey, userValue] of Object.entries(data)) {
+                console.log("isComing for " + userValue.name + ": " + userValue.isComing);
+                if (count == limit) break;
+                if (userValue.isComing != null) continue;
+                count++;
+                let cleanNumber = userValue.phoneNumber.toString().replace(/\D/g, '');
+                phoneNumbers.push(cleanNumber.toString());
+            }
+            console.log(phoneNumbers);
+            if (phoneNumbers.length == 0) {
+                console.log("No blank RSVPs for group " + key);
+            } else {
+                console.log(phoneNumbers.length + " blank RSVPs");
+                await getNotificationGroup(phoneNumbers).then(async (registrationTokens) => {
+                    const message = {
+                        "notification": {
+                            "title": "Player reminder",
+                            "body": "You are scheduled to play tomorrow with " + groupName + ". Tap to RSVP now."
+                        },
+                        "tokens": registrationTokens,
+                    };
+                    await sendNotificationsToGroup(message, registrationTokens);
+                });
+            }
+        });
+    }
 }
 
-function run_procastinatorNotification() {
+async function run_procastinatorNotification() {
     const dayName = new Date().toLocaleString('en-us', { weekday: 'long' })
     console.log(getDBRefOfCurrentWeekName())
-    admin.database().ref('groups').once('value', (snapshot) => {
+    await admin.database().ref('groups-v2').once('value', async (snapshot) => {
         const groupsData = snapshot.val();
-        for (const [groupName, submission] of Object.entries(groupsData)) {
-            const ref_groupWeekSubmissions = "incoming-v4/" + groupName + "/" + getDBRefOfCurrentWeekName()
+        for (const [groupId, groupValue] of Object.entries(groupsData)) {
+            const ref_groupWeekSubmissions = "incoming-v4/" + groupId + "/" + getDBRefOfCurrentWeekName()
             console.log(ref_groupWeekSubmissions)
-            admin.database().ref(ref_groupWeekSubmissions).once('value', (snapshot) => { })
-                .then((snapshot) => {
+            await admin.database().ref(ref_groupWeekSubmissions).once('value', (snapshot) => { })
+                .then(async (snapshot) => {
                     const groupWeekSubmissions = snapshot.val()
                     if (groupWeekSubmissions == null) return;
                     var registeredNumbers = []
@@ -371,30 +482,30 @@ function run_procastinatorNotification() {
                         registeredNumbers.push(submission.phoneNumber)
                     }
 
-                    admin.database().ref("approvedNumbers").once('value', (snapshot2) => {
+                    await admin.database().ref("approvedNumbers").once('value', async (snapshot2) => {
 
                         const userData = snapshot2.val()
                         //flatten users to list of phone numbers
                         var allUsersInGroup = []
                         for (const [userKey, userValue] of Object.entries(userData)) {
-                            if (userValue.groups != null && userValue.groups.includes(groupName)) {
+                            if (userValue.groups != null && userValue.groups.includes(groupId)) {
                                 allUsersInGroup.push({ "phoneNumber": userKey, "name": userValue.name })
                             }
                         }
 
                         var procrastinators = allUsersInGroup.filter((user) => !registeredNumbers.includes(user.phoneNumber));
-                        console.log("procrastinators in group " + groupName)
+                        console.log("procrastinators in group " + groupId)
                         console.log(procrastinators)
                         var numbersOnly = procrastinators.map((user) => user.phoneNumber)
-                        getNotificationGroup(numbersOnly).then(registrationTokens => {
+                        await getNotificationGroup(numbersOnly).then(registrationTokens => {
                             const message = {
                                 "notification": {
                                     "title": "Sign up for next week",
-                                    "body": "You have not yet signed up for next week. The schedule closes at 8pm Sunday."
+                                    "body": "You have not yet signed up for next week for "+ groupId +". The schedule closes at 8pm Sunday."
                                 },
                                 "tokens": registrationTokens,
                             };
-                            sendNotificationsToGroup(message, registrationTokens, null)
+                            sendNotificationsToGroup(message, registrationTokens)
                         });
 
                     })
@@ -442,7 +553,7 @@ function run_scheduleNotification(res, title, body) {
             },
             "tokens": registrationTokens,
         };
-        sendNotificationsToGroup(message, registrationTokens, res)
+        sendNotificationsToGroup(message, registrationTokens)
     });
 }
 
@@ -483,7 +594,7 @@ function run_rsvpNotification(req, res) {
                     "tokens": registrationTokens,
                 };
                 console.log(message.notification.body)
-                sendNotificationsToGroup(message, registrationTokens, res)
+                sendNotificationsToGroup(message, registrationTokens)
             })
         })
     } else {
@@ -523,13 +634,14 @@ function run_rsvpNotification(req, res) {
                     },
                     "tokens": registrationTokens,
                 };
-                sendNotificationsToGroup(message, registrationTokens, res)
+                sendNotificationsToGroup(message, registrationTokens)
             })
         })
     }
 }
 
 
+/**If recipients is null, sends to all users in approvedNumbers */
 async function getNotificationGroup(recipients) {
     console.log("preparing to send push to " + recipients)
     return admin.database().ref("approvedNumbers").once('value', (snapshot) => { })
@@ -554,8 +666,8 @@ async function getNotificationGroup(recipients) {
 
 }
 
-function sendNotificationsToGroup(message, registrationTokens, res) {
-    admin.messaging().sendMulticast(message)
+async function sendNotificationsToGroup(message, registrationTokens) {
+    await admin.messaging().sendMulticast(message)
         .then((response) => {
             if (response.failureCount > 0) {
                 const failedTokens = [];
@@ -566,14 +678,8 @@ function sendNotificationsToGroup(message, registrationTokens, res) {
                     }
                 });
                 console.log('List of tokens that caused failures: ' + failedTokens);
-                if (res != null) {
-                    res.end('List of tokens that caused failures: ' + failedTokens)
-                }
             } else {
                 console.log("No errors sending messages")
-                if (res != null) {
-                    res.end("No errors sending messages")
-                }
             }
         })
 }
