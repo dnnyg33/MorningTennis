@@ -56,36 +56,63 @@ exports.testSort = functions.https.onRequest((req, res) => {
     // })
 })
 
+/**
+ * When a user signs up to the app, this function is called to create a user object in the database.
+ * This function is also called when a user starts the app to update their firebase tokens
+ * @param phoneNumber - the user's phone number (optional and can replace the email as the unique identifier)
+ * @param name - the user's name
+ * @param firebaseId - the user's firebase id
+ * @param email - the user's email (optional and can replace the phone number as the unique identifier)
+ * @param tokens - the user's firebase tokens
+ */
 exports.createUser = functions.https.onRequest((req, res) => {
     const body = req.body.data;
-    console.log(JSON.stringify(body))
+    console.log("body: " + JSON.stringify(body))
+    if (body.firebaseId == null || body.name == null || (body.phoneNumber == null && body.email == null)) {
+        res.status(400).send({ "data": { "result": "failure", "reason": "firebaseId, name and either phoneNumber or email are required" } })
+        return;
+    }
     //check for existing user with id as phone number
     //if none, query all objects to see if email is in any user objects
-    admin.database().ref("approvedNumbers").once('value', (snapshot) => {
+    admin.database().ref("approvedNumbers").once('value', async (snapshot) => {
         //loop results
         const allUsers = snapshot.val();
         for (const [key, serverUser] of Object.entries(allUsers)) {
             if ((body.phoneNumber != null && body.phoneNumber == serverUser.phoneNumber) ||
                 (body.email != null && body.email == serverUser.email)) {
-                serverUser.name = body.name;
-                serverUser.email = body.email;
-                serverUser.phoneNumber = body.phoneNumber;
+                //if found, update tokens and return
+                if(body.tokens == null) {
+                    res.status(200).send({ "data": serverUser });
+                    return;
+                }
                 serverUser.tokens = body.tokens;
-                serverUser.suspended = body.suspended;
-                serverUser.firebaseId = body.firebaseId;
-                serverUser.groups = body.groups;
                 admin.database().ref("approvedNumbers").child(key).update(serverUser);
                 res.status(200).send({ "data": serverUser });
                 return;
             }
         }
+        //check invitedUsers table and add any outstanding groups
+        let invitedUserSnapshot = await admin.database().ref("invitedUsers").child(body.phoneNumber).once('value', (snapshot) => {
+            const invitedUser = snapshot.val();
+            if (invitedUser != null) {
+                console.log("invitedUser.groups: " + JSON.stringify(invitedUser.groups))
+                return invitedUser
+            }
+        });
+        if (invitedUserSnapshot.val() != null) {
+            // Remove invited user entry if it exists
+            admin.database().ref("invitedUsers").child(body.phoneNumber).remove()
+        }
 
         const newUser = {
             name: body.name,
-            email: body.email,
-            phoneNumber: body.phoneNumber
+            email: body.email ?? null,
+            phoneNumber: body.phoneNumber ?? null,
+            firebaseId: body.firebaseId,
+            groups: invitedUserSnapshot.val().groups ?? null,
         };
-        admin.database().ref("approvedNumbers").child(body.firebaseId).set(newUser);
+        console.log("newUser: " + JSON.stringify(removeNullUndefined(newUser)))
+        admin.database().ref("approvedNumbers").child(body.firebaseId).set(removeNullUndefined(newUser));
         res.status(201).send({ "data": newUser });
     })
 });
@@ -117,7 +144,7 @@ exports.joinGroupRequest = functions.https.onRequest((req, res) => {
             const request = {
                 "userId": body.userId, "status": "pending", "dateInitiated": new Date().getTime()
             }
-            
+
             //find any existing, pending and delete
             admin.database().ref("joinRequests").child(body.groupId).once('value', (snapshot) => {
                 const allRequests = snapshot.val();
@@ -142,20 +169,20 @@ exports.toggleAdmin = functions.https.onRequest((req, res) => {
     //lookup group
     admin.database().ref("groups-v2").child(body.groupId).once('value', (snapshot) => {
         const group = snapshot.val();
-        if(group == null){
-            res.send(400, {"data": {"result": "failure", "reason": "group not found"}})
+        if (group == null) {
+            res.send(400, { "data": { "result": "failure", "reason": "group not found" } })
             return;
         }
         //check that user is admin of group
         if (!group.admins.includes(body.adminId)) {
-            res.send(401, {"data": {"result": "failure", "reason": "user is not admin"}})
+            res.send(401, { "data": { "result": "failure", "reason": "user is not admin" } })
             return;
         }
 
         if (group.admins.includes(body.userId)) {
             //make sure there are at least 2 admins before removing one
             if (group.admins.length == 1) {
-                res.send(400, {"data": {"result": "failure", "reason": "cannot remove last admin"}})
+                res.send(400, { "data": { "result": "failure", "reason": "cannot remove last admin" } })
                 return;
             }
             //remove userId from list of admins
@@ -168,7 +195,7 @@ exports.toggleAdmin = functions.https.onRequest((req, res) => {
             group.admins.push(body.userId)
         }
         admin.database().ref("groups-v2").child(body.groupId).child("admins").set(group.admins)
-        res.send({"data": {"result": "success"}})
+        res.send({ "data": { "result": "success" } })
     });
 })
 
@@ -183,7 +210,7 @@ exports.approveJoinRequest = functions.https.onRequest((req, res) => {
             admin.database().ref("groups-v2").child(body.groupId).child("admins").once('value', (snapshot) => {
                 //verify that user is admin
                 const admins = snapshot.val()
-                if(!Object.values(admins).includes(body.adminId)){
+                if (!Object.values(admins).includes(body.adminId)) {
                     console.log(body.adminId + "not found")
                     res.sendStatus(401)
                     return;
@@ -225,47 +252,60 @@ exports.approveJoinRequest = functions.https.onRequest((req, res) => {
                         sendNotificationsToGroup(message, registrationTokens)
                     })
                 })
-                
+
             });
         }
     });
 });
 
-
+/**Phone numbers can be invited to groups before they are users. Or if a user exists, it is added directly to group
+ * @param userId - the user being invited to the group as entered by the user (only phone numbers supported)
+ * @param groupId - the group being invited to
+ * @param adminId - the user who is inviting the new user
+ */
 exports.addUserToGroup = functions.https.onRequest((req, res) => {
     const body = req.body.data;
     console.log("body: " + JSON.stringify(body))
     //check that adder is admin
     admin.database().ref('groups').child(body.groupId).child("admins").once('value', (snapshot) => {
         const adminList = snapshot.val()
-        if (!adminList.includes(body.adminId)) {
-            console.log(body.adminId + "not found")
-            res.sendStatus(401)
+        if (body.adminId == undefined || body.adminId == null) {
+            res.status(400).send({ "data": { "groupId": body.groupId, "userId": body.userId, "message": "adminId is required" } })
+            return;
         }
-        admin.database().ref("approvedNumbers").child(body.userId).once('value', (snapshot) => {
-            var user = snapshot.val()
-            if (user == null) {
-                var newUser = { "name": body.userName, "groups": [body.groupId] }
-                admin.database().ref("approvedNumbers").child(body.userId).set(newUser)
-                res.send({ "data": { "groupId": body.groupId, "userId": body.userId, "message": "User created and added to group" } })
-            } else {
-                console.log("Found user: " + JSON.stringify(user))
-                if (user.groups == null) {
-                    user.groups = [body.groupId];
-                    console.log("User updated with group: " + JSON.stringify(user))
-                    admin.database().ref("approvedNumbers").child(body.userId).update(user)
-                    res.send({ "data": { "groupId": body.groupId, "userId": body.userId, "message": "Existing user added to first group" } })
-                }
-                if (user.groups.includes(body.groupId)) {
-                    res.send({ "data": { "groupId": body.groupId, "userId": body.userId, "message": "User already in group" } })
-                } else {
-                    user.groups.push(body.groupId)
-                    console.log(user.groups)
-                    admin.database().ref("approvedNumbers").child(body.userId).update(user)
-                    res.send({ "data": { "groupId": body.groupId, "userId": body.userId, "message": "Existing user added to new group" } })
+        if (!adminList.includes(body.adminId)) {
+            console.log(body.adminId + " not found")
+            res.status(401).send({ "data": { "groupId": body.groupId, "userId": body.userId, "message": "adminId is not an admin of this group" } })
+            return;
+        }
+        admin.database().ref("approvedNumbers").once('value', (snapshot) => {
+            var users = snapshot.val()
+            var foundUser = false
+            for (const [key, user] of Object.entries(users)) {
+                if (user.phoneNumber == body.userId) {
+                    console.log("Found user: " + JSON.stringify(user))
+                    foundUser = true;
+                    if (user.groups == null) {
+                        user.groups = [body.groupId]
+                        console.log("User updated with group: " + JSON.stringify(user))
+                        admin.database().ref("approvedNumbers").child(key).update(user)
+                        res.status(200).send({ "data": { "groupId": body.groupId, "userId": body.userId, "message": "Existing user added to first group" } })
+                    } else if (user.groups.includes(body.groupId)) {
+                        res.status(200).send({ "data": { "groupId": body.groupId, "userId": body.userId, "message": "User already in group" } })
+                    } else {
+                        user.groups.push(body.groupId)
+                        console.log(user.groups)
+                        admin.database().ref("approvedNumbers").child(key).update(user)
+                        res.status(200).send({ "data": { "groupId": body.groupId, "userId": body.userId, "message": "Existing user added to new group" } })
+                    }
+                    return;
                 }
             }
-
+            if (!foundUser) {
+                var newUser = { "groups": [body.groupId], "adminId": body.adminId, "dateInvited": new Date().getTime() }
+                admin.database().ref("invitedUsers").child(body.userId).set(newUser)
+                res.status(201).send({ "data": { "groupId": body.groupId, "userId": body.userId, "message": "User invited to group. Once they create an account they will be added to the group." } })
+            }
         })
     })
 })
@@ -356,7 +396,7 @@ exports.scheduleReminderNotification = functions.pubsub.schedule('20 15 * * MON-
 //notification for players on Monday, sent out late Sunday night after schedule closes
 exports.scheduleReminderNotificationSunday = functions.pubsub.schedule('30 20 * * SUN')
     .timeZone('America/Denver')
-    .onRun(async (context) =>  {
+    .onRun(async (context) => {
         await run_reminderNotificationsForAllGroups()
     })
 
@@ -416,12 +456,12 @@ async function run_reminderNotificationsForAllGroups() {
         for (const [key, groupValue] of Object.entries(data)) {
             const groupName = groupValue.name
             let playersRef;
-            if(groupValue.sortingAlgorithm == "timePreference"){
+            if (groupValue.sortingAlgorithm == "timePreference") {
                 playersRef = "sorted-v3/" + key + "/" + getDBRefOfCurrentWeekName() + "/" + dayName
             } else {
                 playersRef = "sorted-v4/" + key + "/" + getDBRefOfCurrentWeekName() + "/" + dayName + "/players"
             }
-            
+
             console.log("\nBuilding notifications for " + playersRef)
             await buildNotificationsForDay(playersRef, key, groupName);
         }
@@ -501,7 +541,7 @@ async function run_procastinatorNotification() {
                             const message = {
                                 "notification": {
                                     "title": "Sign up for next week",
-                                    "body": "You have not yet signed up for next week for "+ groupId +". The schedule closes at 8pm Sunday."
+                                    "body": "You have not yet signed up for next week for " + groupValue.name + ". The schedule closes at 8pm Sunday."
                                 },
                                 "tokens": registrationTokens,
                             };
@@ -996,3 +1036,5 @@ Array.prototype.sum = function () {
 Array.prototype.avg = function () {
     return this.sum() / this.length;
 };
+
+const removeNullUndefined = obj => Object.entries(obj).filter(([_, v]) => v != null).reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {});
