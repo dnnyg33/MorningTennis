@@ -1,6 +1,16 @@
 
-module.exports.tennisSortBySkill = tennisSortBySkill;
+module.exports.runSort = runSort;
+const admin = require("firebase-admin");
 const v3 = require('./sorting-v3.js')
+
+async function runSort(incomingSubmissionsData, groupId, weekName) {
+    admin.database().ref('groups-v2').child(groupId).child("scheduleIsBuilding").set(true);
+
+    const memberRankingsSnapshot = await admin.database().ref('member_rankings').child(groupId).get();
+    const result = tennisSortBySkill(incomingSubmissionsData, memberRankingsSnapshot.val())
+    admin.database().ref("sorted-v4").child(groupId).child(weekName).set(result)
+    return result
+}
 
 function Combinations(arr, r) {
     // To avoid object referencing, cloning the array.
@@ -30,7 +40,9 @@ function Combinations(arr, r) {
 
 
 function tennisSortBySkill(data, playerInfoMap) {
+    console.log("playerInfoMap: " + JSON.stringify(playerInfoMap))
     let uniqueData = v3.removeDuplicates(data)
+    console.log("Unique Data: " + JSON.stringify(uniqueData))
     //make a map for each day with key as name of day
     const daysAvailable = {}
 
@@ -47,8 +59,7 @@ function tennisSortBySkill(data, playerInfoMap) {
 
 
     function addChoiceToDay(playerSubmission, key) {
-        console.log("playerInfoMap")
-        console.log(JSON.stringify(playerInfoMap))
+        console.log("playerInfoMap: " + JSON.stringify(playerInfoMap))
         const ranking = playerInfoMap[playerSubmission.phoneNumber]
         let utr = 40
         let goodwill = 1
@@ -109,7 +120,12 @@ function tennisSortBySkill(data, playerInfoMap) {
         for (const [key, allPlayers] of Object.entries(daysAvailable)) {//daysAvailable = {"Monday": [{name: "5412078581", "utr": 5.5}]}
             var combos
             if (allPlayers.length < 4) {
-                combos = [allPlayers.map(x => "("+x.name+")")];
+                allPlayers.forEach(x => {
+                    if (x.name.substring(0, 1) != "(") {
+                        x.name = "(" + x.name + ")"
+                    }
+                })
+                combos = [allPlayers]
             } else {
                 combos = Combinations(allPlayers, 4); //item = {name: "5412078581", "utr": 5.5}
             }

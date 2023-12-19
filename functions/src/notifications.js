@@ -1,4 +1,9 @@
+module.exports.run_rsvpNotification = run_rsvpNotification;
+module.exports.run_reminderNotificationsForAllGroups = run_reminderNotificationsForAllGroups;
+module.exports.run_procastinatorNotification = run_procastinatorNotification;
+module.exports.run_scheduleNotification = run_scheduleNotification;
 
+const admin = require("firebase-admin");
 
 function run_rsvpNotification(req, res) {
     console.log("run_rsvpNoticication " + JSON.stringify(req.weekPath))
@@ -125,21 +130,27 @@ async function getNotificationGroup(recipients) {
 }
 
 async function sendNotificationsToGroup(message, registrationTokens) {
-    await admin.messaging().sendMulticast(message)
-        .then((response) => {
-            if (response.failureCount > 0) {
-                const failedTokens = [];
-                response.responses.forEach((resp, idx) => {
+    if (process.env.FUNCTIONS_EMULATOR == "true") {
+        console.log("Not sending notification in emulator")
+        console.log(message)
+        return;
+    } else {
+        await admin.messaging().sendMulticast(message)
+            .then((response) => {
+                if (response.failureCount > 0) {
+                    const failedTokens = [];
+                    response.responses.forEach((resp, idx) => {
 
-                    if (!resp.success) {
-                        failedTokens.push(registrationTokens[idx]);
-                    }
-                });
-                console.log('List of tokens that caused failures: ' + failedTokens);
-            } else {
-                console.log("No errors sending messages")
-            }
-        })
+                        if (!resp.success) {
+                            failedTokens.push(registrationTokens[idx]);
+                        }
+                    });
+                    console.log('List of tokens that caused failures: ' + failedTokens);
+                } else {
+                    console.log("No errors sending messages")
+                }
+            })
+    }
 }
 
 
@@ -253,4 +264,22 @@ async function run_procastinatorNotification() {
                 })
         }
     })
+}
+
+function getDBRefOfCurrentWeekName() {
+    const today = new Date();
+    var dayName = "Monday";
+
+    var diff = 0;
+    if (today.getDay() == 0) {
+        diff = 1 //sunday
+    } else if (today.getDay() == 6) {
+        diff = 2 //saturday
+    } else {
+        diff = -1 * (today.getDay() - 1)
+    }
+    const monday = today.addDays(diff)
+    const weekName = "Monday-" + (monday.getMonth() + 1) + "-" + monday.getDate() + "-" + monday.getFullYear()
+    return weekName
+
 }

@@ -1,6 +1,6 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-
+module.exports.processLateSubmission = processLateSubmission;
 
 /**
  * When a user signs up to the app, this function is called to create a user object in the database.

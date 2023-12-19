@@ -1,12 +1,12 @@
 
+const admin = require("firebase-admin");
 module.exports.runSort = runSort;
 module.exports.removeDuplicates = removeDuplicates;
 
-function runSort(snapshot, location, key) {
-    const original = snapshot.after.val()
-
+function runSort(original, groupId, weekName) {
     var groups = tennisSort(original)
-    return admin.database().ref(location).child(key).set(groups)
+    admin.database().ref("sorted-v3").child(groupId).child(weekName).set(groups)
+    return groups;
 }
 
 function tennisSort(data) {
