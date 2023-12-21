@@ -99,9 +99,11 @@ exports.createUser = functions.https.onRequest((req, res) => {
                 return invitedUser
             }
         });
+        let preExistingGroups = []
         if (invitedUserSnapshot.val() != null) {
             // Remove invited user entry if it exists
             admin.database().ref("invitedUsers").child(body.phoneNumber).remove()
+            preExistingGroups = invitedUserSnapshot.val().groups
         }
 
         const newUser = {
@@ -109,7 +111,7 @@ exports.createUser = functions.https.onRequest((req, res) => {
             email: body.email ?? null,
             phoneNumber: body.phoneNumber ?? null,
             firebaseId: body.firebaseId,
-            groups: invitedUserSnapshot.val().groups ?? null,
+            groups: preExistingGroups,
         };
         console.log("newUser: " + JSON.stringify(removeNullUndefined(newUser)))
         admin.database().ref("approvedNumbers").child(body.firebaseId).set(removeNullUndefined(newUser));
