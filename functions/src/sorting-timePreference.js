@@ -6,6 +6,7 @@ module.exports.removeDuplicates = removeDuplicates;
 function runSort(original, groupId, weekName) {
     var groups = tennisSort(original)
     admin.database().ref("sorted-v3").child(groupId).child(weekName).set(groups)
+    admin.database().ref("sorted-v5").child(groupId).child("timePreference").child(weekName).set(groups)
     return groups;
 }
 
@@ -51,9 +52,10 @@ function tennisSort(data) {
 
         let playerCountForDay = 8
         let addedAsAlternate = false
-        let day = daysMap[playerPreference.day] ?? []
-        day.push(buildSortedObject(playerPreference))
-        daysMap[playerPreference.day] = day
+        let day = daysMap[playerPreference.day] ?? { "players": [] }
+        let players = day.players ?? []
+        players.push(buildSortedObject(playerPreference))
+        daysMap[playerPreference.day] = { "players": players }
 
         if (!hasReachedMaxDays && !addedAsAlternate) {
             person.scheduledDays++

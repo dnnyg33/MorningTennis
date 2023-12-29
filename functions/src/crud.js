@@ -1,6 +1,13 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 module.exports.processLateSubmission = processLateSubmission;
+module.exports.createUser = createUser;
+module.exports.joinGroupRequest = joinGroupRequest;
+module.exports.toggleAdmin = toggleAdmin;
+module.exports.approveJoinRequest = approveJoinRequest;
+module.exports.inviteUserToGroup = inviteUserToGroup;
+module.exports.deleteAccount = deleteAccount;
+
 
 /**
  * When a user signs up to the app, this function is called to create a user object in the database.
@@ -11,7 +18,7 @@ module.exports.processLateSubmission = processLateSubmission;
  * @param email - the user's email (optional and can replace the phone number as the unique identifier)
  * @param tokens - the user's firebase tokens
  */
-exports.createUser = functions.https.onRequest((req, res) => {
+function createUser(req, res) {
     const body = req.body.data;
     console.log("body: " + JSON.stringify(body))
     if (body.firebaseId == null || body.name == null || (body.phoneNumber == null && body.email == null)) {
@@ -45,9 +52,11 @@ exports.createUser = functions.https.onRequest((req, res) => {
                 return invitedUser
             }
         });
+        let preExistingGroups = []
         if (invitedUserSnapshot.val() != null) {
             // Remove invited user entry if it exists
             admin.database().ref("invitedUsers").child(body.phoneNumber).remove()
+            preExistingGroups = invitedUserSnapshot.val().groups
         }
 
         const newUser = {
@@ -55,15 +64,15 @@ exports.createUser = functions.https.onRequest((req, res) => {
             email: body.email ?? null,
             phoneNumber: body.phoneNumber ?? null,
             firebaseId: body.firebaseId,
-            groups: invitedUserSnapshot.val().groups ?? null,
+            groups: preExistingGroups,
         };
         console.log("newUser: " + JSON.stringify(removeNullUndefined(newUser)))
         admin.database().ref("approvedNumbers").child(body.firebaseId).set(removeNullUndefined(newUser));
         res.status(201).send({ "data": newUser });
     })
-});
+};
 
-exports.joinGroupRequest = functions.https.onRequest((req, res) => {
+function joinGroupRequest(req, res) {
     const body = req.body.data;
     admin.database().ref("groups-v2").child(body.groupId).once('value', (snapshot) => {
         const group = snapshot.val();
@@ -108,9 +117,10 @@ exports.joinGroupRequest = functions.https.onRequest((req, res) => {
             //TODO How can this happen?
         }
     }).catch((error) => { console.error(error); res.send(500, { "data": { "result": "failure", "reason": error } }); });
-})
+}
 
-exports.toggleAdmin = functions.https.onRequest((req, res) => {
+
+function toggleAdmin(req, res) {
     const body = req.body.data;
     //lookup group
     admin.database().ref("groups-v2").child(body.groupId).once('value', (snapshot) => {
@@ -143,9 +153,9 @@ exports.toggleAdmin = functions.https.onRequest((req, res) => {
         admin.database().ref("groups-v2").child(body.groupId).child("admins").set(group.admins)
         res.send({ "data": { "result": "success" } })
     });
-})
+}
 
-exports.approveJoinRequest = functions.https.onRequest((req, res) => {
+function approveJoinRequest(req, res) {
     const body = req.body.data;
     admin.database().ref("joinRequests").child(body.groupId).child(body.requestId).once('value', (snapshot) => {
         const request = snapshot.val()
@@ -202,14 +212,14 @@ exports.approveJoinRequest = functions.https.onRequest((req, res) => {
             });
         }
     });
-});
+};
 
 /**Phone numbers can be invited to groups before they are users. Or if a user exists, it is added directly to group
  * @param userId - the user being invited to the group as entered by the user (only phone numbers supported)
  * @param groupId - the group being invited to
  * @param adminId - the user who is inviting the new user
  */
-exports.addUserToGroup = functions.https.onRequest((req, res) => {
+function inviteUserToGroup(req, res) {
     const body = req.body.data;
     console.log("body: " + JSON.stringify(body))
     //check that adder is admin
@@ -254,9 +264,9 @@ exports.addUserToGroup = functions.https.onRequest((req, res) => {
             }
         })
     })
-})
+}
 
-exports.deleteAccount = functions.https.onRequest((req, res) => {
+function deleteAccount(req, res) {
     const db = admin.database();
     const body = req.body.data;
     const removedLog = []
@@ -323,7 +333,7 @@ exports.deleteAccount = functions.https.onRequest((req, res) => {
         console.log("removedLog: " + removedLog)
         res.send({ "data": { "result": "success", "log": removedLog } })
     });
-});
+};
 
 function processLateSubmission(snapshot, writeLocation) {
     const original = snapshot.after.val()

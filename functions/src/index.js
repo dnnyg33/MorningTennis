@@ -1,9 +1,10 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-const sortingv3 = require("./sorting-v3.js")
-const sortingv4 = require("./sorting-v4.js")
+const sortingTimePreference = require("./sorting-timePreference.js")
+const sortingBalanceSkill = require("./sorting-balanceSkill.js")
 const notifications = require("./notifications.js")
 const crud = require("./crud.js")
+module.exports.dayOfWeekAsInteger = dayOfWeekAsInteger;
 
 admin.initializeApp()
 
@@ -11,37 +12,39 @@ admin.initializeApp()
 // // https://firebase.google.com/docs/functions/write-firebase-functions
 //
 
-exports.sortWeekv3 = functions.database.ref("/incoming-v4/{groupId}/{day}").onWrite((snapshot, context) => {
+exports.sortWeekv5 = functions.database.ref("/incoming-v4/{groupId}/{day}").onWrite((snapshot, context) => {
     const groupId = context.params.groupId;
     const weekName = context.params.day;
     const incomingSubmissionsData = snapshot.after.val()
-    sortingv3.runSort(incomingSubmissionsData, groupId, weekName);
+    sortingTimePreference.runSort(incomingSubmissionsData, groupId, weekName);
+    sortingBalanceSkill.runSort(incomingSubmissionsData, groupId, weekName)
 });
 
+exports.testFailure = functions.https.onRequest(async (req, res) => {
+    console.log("testFailure")
+    res.status(500).send("testFailure")
+})
+exports.testSuccess = functions.https.onRequest(async (req, res) => {
+    console.log("testSuccess")
+    res.status(200).send("testSuccess")
+})
 
 exports.testSort = functions.https.onRequest(async (req, res) => {
     console.log(req.query)
     const groupId = req.query["groupId"];
     const weekName = req.query["weekName"];
     const incomingSubmissionsData = req.body[weekName];
-    const result = await sortingv4.runSort(incomingSubmissionsData, groupId, weekName);
-    res.send(result)
-})
-
-exports.sortWeekv4 = functions.database.ref("/incoming-v4/{groupId}/{day}").onWrite((snapshot, context) => {
-    const groupId = context.params.groupId;
-    const weekName = context.params.day;
-    const incomingSubmissionsData = snapshot.after.val()
-    //to switch between testing v3 and v4, just change the file const below
-    sortingv4.runSort(incomingSubmissionsData, groupId, weekName)
+    const result = await sortingBalanceSkill.runSort(incomingSubmissionsData, groupId, weekName);
+    const result2 = sortingTimePreference.runSort(incomingSubmissionsData, groupId, weekName);
+    res.send({"balanceSkill": result, "timePreference": result2})
 })
 
 exports.lateSubmissions = functions.database.ref("late-submissions/{groupId}/{weekName}/{day}/{pushKey}").onWrite((snapshot, context) => {
     const groupId = context.params.groupId;
     const weekName = context.params.weekName;
     const day = context.params.day
-    const writeLocationV3 = "sorted-v3/" + groupId + "/" + weekName + "/" + day
-    const writeLocationV4 = "sorted-v4/" + groupId + "/" + weekName + "/" + day + "/players/"
+    const writeLocationV3 = "sorted-v5/" + groupId + "/" + "timePreference/" + weekName + "/" + day
+    const writeLocationV4 = "sorted-v5/" + groupId + "/" + "balanceSkill/" + weekName + "/" + day + "/players"
     return crud.processLateSubmission(snapshot, writeLocationV3).then(() =>
         crud.processLateSubmission(snapshot, writeLocationV4))
 })
@@ -49,14 +52,14 @@ exports.lateSubmissions = functions.database.ref("late-submissions/{groupId}/{we
 
 
 exports.testSendNotification = functions.https.onRequest(async (req, res) => {
-    await notifications.run_rsvpNotification(req, res)
+    notifications.run_scheduleNotification(req, res)
     res.end("Done")
 })
 
 
 //A notification for an alternate who has been promoted to player due to an RSVP event or for a last minute change.
-exports.sendRSVPUpdateNotification = functions.https.onCall(async (req, res) => {
-    notifications.run_rsvpNotification(req, res)
+exports.sendRSVPUpdateNotification = functions.https.onRequest((req, res) => {
+    notifications.run_procastinatorNotification(req.body, res)
 })
 
 
@@ -99,7 +102,7 @@ exports.scheduleCloseScheduleCommand = functions.pubsub.schedule('05 20 * * SUN'
                 admin.database().ref("groups-v2").child(groupName).child("scheduleIsOpen").set(false)
             }
             //TODO when schedule timing is dynamic, this will need to be specific to each group so that users aren't blasted for groups they aren't in
-            run_scheduleNotification(null, "Schedule now closed", "View and RSVP for next week's schedule in the app.")
+            notifications.run_scheduleNotification(null, "Schedule now closed", "View and RSVP for next week's schedule in the app.")
         });
     })
 
@@ -118,7 +121,25 @@ exports.scheduleOpenNotification = functions.pubsub.schedule('00 8 * * FRI')
     });
 
 
-
+    ///CRUD
+    module.exports.createUser = functions.https.onRequest((req, res) => {
+        crud.createUser(req, res)
+    })
+    exports.joinGroupRequest = functions.https.onRequest((req, res) => {
+        crud.joinGroupRequest(req, res)
+    })
+    exports.toggleAdmin = functions.https.onRequest((req, res) => {
+        crud.toggleAdmin(req, res)
+    })
+    exports.approveJoinRequest = functions.https.onRequest((req, res) => {
+        crud.approveJoinRequest(req, res)
+    })
+    exports.inviteUserToGroup = functions.https.onRequest((req, res) => {
+        crud.inviteUserToGroup(req, res)
+    })
+    exports.deleteAccount = functions.https.onRequest((req, res) => {
+        crud.deleteAccount(req, res)
+    })
 
 
 

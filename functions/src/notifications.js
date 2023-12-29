@@ -4,16 +4,29 @@ module.exports.run_procastinatorNotification = run_procastinatorNotification;
 module.exports.run_scheduleNotification = run_scheduleNotification;
 
 const admin = require("firebase-admin");
+const index = require("./index.js")
 
-function run_rsvpNotification(req, res) {
-    console.log("run_rsvpNoticication " + JSON.stringify(req.weekPath))
+function run_rsvpNotification(body, res) {
+    console.log("run_rsvpNotification:body " + JSON.stringify(body))
+    if (body.position == null || body.position === "") {
+        res.status(400).send("Please provide position")
+        return;
+    }
+    if (body.weekPath == null || body.weekPath === "") {
+        res.status(400).send("Please provide weekPath")
+        return;
+    }
+    if (body.dayName == null || body.dayName === "") {
+        res.status(400).send("Please provide dayName")
+        return;
+    }
 
-    const position = parseInt(req.position)
-    const weekPath = req.weekPath
-    const dayName = req.dayName
+    const position = parseInt(body.position)
+    const weekPath = body.weekPath
+    const dayName = body.dayName
     const today = new Date()
-    const offsetHours = req.offsetHours ? req.offsetHours : -6
-    const dayNumber = dayOfWeekAsInteger(dayName)
+    const offsetHours = body.offsetHours ? body.offsetHours : -6
+    const dayNumber = index.dayOfWeekAsInteger(dayName)
     //if rsvp is in the past, just break
     if (dayNumber < new Date().getDay()) {
         return;
@@ -161,7 +174,7 @@ async function run_reminderNotificationsForAllGroups() {
     console.log(tomorrow)
     const dayName = tomorrow.toLocaleString('en-us', { weekday: 'long', timeZone: 'America/Denver' })
     console.log("dayName is " + dayName)
-    await admin.database().ref('groups').once('value', async (snapshot) => {
+    await admin.database().ref('groups-v2').once('value', async (snapshot) => {
         const data = snapshot.val();
         for (const [key, groupValue] of Object.entries(data)) {
             const groupName = groupValue.name
