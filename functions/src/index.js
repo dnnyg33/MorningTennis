@@ -5,6 +5,8 @@ const sortingBalanceSkill = require("./sorting-balanceSkill.js")
 const notifications = require("./notifications.js")
 const crud = require("./crud.js")
 module.exports.dayOfWeekAsInteger = dayOfWeekAsInteger;
+module.exports.shortenedName = shortenedName;
+module.exports.removeDuplicates = removeDuplicates;
 
 admin.initializeApp()
 
@@ -58,7 +60,7 @@ exports.testSendNotification = functions.https.onRequest(async (req, res) => {
 
 
 //A notification for an alternate who has been promoted to player due to an RSVP event or for a last minute change.
-exports.sendRSVPUpdateNotification = functions.https.onRequest((req, res) => {
+exports.sendRSVPInformNotification = functions.https.onRequest((req, res) => {
     notifications.run_procastinatorNotification(req.body, res)
 })
 
@@ -172,3 +174,35 @@ Array.prototype.avg = function () {
 };
 
 const removeNullUndefined = obj => Object.entries(obj).filter(([_, v]) => v != null).reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {});
+
+
+function shortenedName(name) {
+    var parts = name.split(" ");
+    switch (parts.length) {
+      case 1:
+        return this;
+      case 2:
+        return `${parts[0]} ${parts[1].substring(0, 1)}.`;
+      case 3:
+        return `${parts[0]} ${parts[1].substring(0, 1)} ${parts[2]}`;
+    }
+}
+
+function removeDuplicates(data) {
+    var firebaseId = []
+    var uniquePlayers = []
+    //iterate through data 
+    for (const [key, item] of Object.entries(data)) {
+        let cleanNumber = item.firebaseId.toString().replace(/\D/g, '')
+        if (firebaseId.includes(cleanNumber)) {
+            console.log("firebaseIds include: " + cleanNumber)
+            uniquePlayers = uniquePlayers.filter(f => cleanNumber !== f.firebaseId.toString().replace(/\D/g, ''))
+        }
+        item.scheduledDays = 0
+        firebaseId.push(cleanNumber)
+        uniquePlayers.push(item)
+
+
+    }
+    return uniquePlayers
+}

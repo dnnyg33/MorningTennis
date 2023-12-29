@@ -1,7 +1,7 @@
 
 const admin = require("firebase-admin");
 module.exports.runSort = runSort;
-module.exports.removeDuplicates = removeDuplicates;
+const index = require('./index.js')
 
 function runSort(original, groupId, weekName) {
     var groups = tennisSort(original)
@@ -13,7 +13,7 @@ function runSort(original, groupId, weekName) {
 function tennisSort(data) {
     console.log("tennisSort")
     console.log(JSON.stringify(data))
-    let uniqueData = removeDuplicates(data)
+    let uniqueData = index.removeDuplicates(data)
 
     var playerCount = 0
     let sortedListsMap = {}
@@ -70,25 +70,6 @@ function hasNonFoursome(length) {
     return length % 4 == 0
 }
 
-function removeDuplicates(data) {
-    var firebaseId = []
-    var uniquePlayers = []
-    //iterate through data 
-    for (const [key, item] of Object.entries(data)) {
-        let cleanNumber = item.firebaseId.toString().replace(/\D/g, '')
-        if (firebaseId.includes(cleanNumber)) {
-            console.log("firebaseIds include: " + cleanNumber)
-            uniquePlayers = uniquePlayers.filter(f => cleanNumber !== f.firebaseId.toString().replace(/\D/g, ''))
-        }
-        item.scheduledDays = 0
-        firebaseId.push(cleanNumber)
-        uniquePlayers.push(item)
-
-
-    }
-    return uniquePlayers
-}
-
 
 function buildSortedObjectFull(day, item, choice) {
     var phoneNumber = "Unknown"
@@ -100,7 +81,8 @@ function buildSortedObjectFull(day, item, choice) {
     if (item.sunPro === "Yes") {//replace with tab tracker
         hasSunpro = true
     }
-    return { "day": day, "name": item.name + " (" + choice + ")", "phoneNumber": phoneNumber, "hasSunpro": hasSunpro }
+    let shortenedName = index.shortenedName(item.name)
+    return { "day": day, "name": shortenedName + " (" + choice + ")", "phoneNumber": phoneNumber, "hasSunpro": hasSunpro }
 }
 function buildSortedObject(pair) {
     var name = pair.name
