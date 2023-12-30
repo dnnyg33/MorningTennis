@@ -136,8 +136,8 @@ exports.scheduleOpenNotification = functions.pubsub.schedule('00 8 * * FRI')
     exports.approveJoinRequest = functions.https.onRequest((req, res) => {
         crud.approveJoinRequest(req, res)
     })
-    exports.inviteUserToGroup = functions.https.onRequest((req, res) => {
-        crud.inviteUserToGroup(req, res)
+    exports.modifyGroupMember = functions.https.onRequest((req, res) => {
+        crud.modifyGroupMember(req, res)
     })
     exports.deleteAccount = functions.https.onRequest((req, res) => {
         crud.deleteAccount(req, res)

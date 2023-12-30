@@ -5,7 +5,7 @@ module.exports.createUser = createUser;
 module.exports.joinGroupRequest = joinGroupRequest;
 module.exports.toggleAdmin = toggleAdmin;
 module.exports.approveJoinRequest = approveJoinRequest;
-module.exports.inviteUserToGroup = inviteUserToGroup;
+module.exports.modifyGroupMember = modifyGroupMember;
 module.exports.deleteAccount = deleteAccount;
 
 
@@ -214,53 +214,59 @@ function approveJoinRequest(req, res) {
     });
 };
 
-/**Phone numbers can be invited to groups before they are users. Or if a user exists, it is added directly to group
- * @param userId - the user being invited to the group as entered by the user (only phone numbers supported)
+/** This method is to update an existing group members utr or goodwill. It can also be used to invite a new member to a group.
+ * Phone numbers can be invited as group members before they are users. Or if a user exists, it is added directly as a group member
+ * @param userPublicId - the user being invited to the group as entered by the user (only phone numbers supported). Since this value can be entered by an admin, 
+ * the value is the publicId.
  * @param groupId - the group being invited to
  * @param adminId - the user who is inviting the new user
+ * @param utr - the utr of the user being invited
+ * @param goodwill - the goodwill of the user being invited
  */
-function inviteUserToGroup(req, res) {
+function modifyGroupMember(req, res) {
     const body = req.body.data;
     console.log("body: " + JSON.stringify(body))
     //check that adder is admin
     admin.database().ref('groups').child(body.groupId).child("admins").once('value', (snapshot) => {
         const adminList = snapshot.val()
         if (body.adminId == undefined || body.adminId == null) {
-            res.status(400).send({ "data": { "groupId": body.groupId, "userId": body.userId, "message": "adminId is required" } })
+            res.status(400).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "adminId is required" } })
             return;
         }
         if (!adminList.includes(body.adminId)) {
             console.log(body.adminId + " not found")
-            res.status(401).send({ "data": { "groupId": body.groupId, "userId": body.userId, "message": "adminId is not an admin of this group" } })
+            res.status(401).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "adminId is not an admin of this group" } })
             return;
         }
         admin.database().ref("approvedNumbers").once('value', (snapshot) => {
             var users = snapshot.val()
             var foundUser = false
             for (const [key, user] of Object.entries(users)) {
-                if (user.phoneNumber == body.userId) {
+                if (user.phoneNumber == body.userPublicId) {
                     console.log("Found user: " + JSON.stringify(user))
                     foundUser = true;
+                    //update member_ranking for groupId
+                    admin.database().ref("member_rankings").child(body.groupId).child(key).update({ "utr": body.utr, "goodwill": body.goodwill })
                     if (user.groups == null) {
                         user.groups = [body.groupId]
                         console.log("User updated with group: " + JSON.stringify(user))
                         admin.database().ref("approvedNumbers").child(key).update(user)
-                        res.status(200).send({ "data": { "groupId": body.groupId, "userId": body.userId, "message": "Existing user added to first group" } })
+                        res.status(200).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "Existing user added to first group" } })
                     } else if (user.groups.includes(body.groupId)) {
-                        res.status(200).send({ "data": { "groupId": body.groupId, "userId": body.userId, "message": "User already in group" } })
+                        res.status(200).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "User already in group" } })
                     } else {
                         user.groups.push(body.groupId)
                         console.log(user.groups)
                         admin.database().ref("approvedNumbers").child(key).update(user)
-                        res.status(200).send({ "data": { "groupId": body.groupId, "userId": body.userId, "message": "Existing user added to new group" } })
+                        res.status(200).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "Existing user added to new group" } })
                     }
                     return;
                 }
             }
             if (!foundUser) {
                 var newUser = { "groups": [body.groupId], "adminId": body.adminId, "dateInvited": new Date().getTime() }
-                admin.database().ref("invitedUsers").child(body.userId).set(newUser)
-                res.status(201).send({ "data": { "groupId": body.groupId, "userId": body.userId, "message": "User invited to group. Once they create an account they will be added to the group." } })
+                admin.database().ref("invitedUsers").child(body.userPublicId).set(newUser)
+                res.status(200).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "User invited to group. Once they create an account they will be added to the group." } })
             }
         })
     })

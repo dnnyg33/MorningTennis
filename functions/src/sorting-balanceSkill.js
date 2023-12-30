@@ -10,6 +10,7 @@ async function runSort(incomingSubmissionsData, groupId, weekName) {
     const result = tennisSortBySkill(incomingSubmissionsData, memberRankingsSnapshot.val())
     admin.database().ref("sorted-v4").child(groupId).child(weekName).set(result)
     admin.database().ref("sorted-v5").child(groupId).child("balanceSkill").child(weekName).set(result)
+    admin.database().ref('groups-v2').child(groupId).child("scheduleIsBuilding").set(false);
     return result
 }
 
