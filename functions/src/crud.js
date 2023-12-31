@@ -72,6 +72,14 @@ function createUser(req, res) {
     })
 };
 
+/**
+ * When a user wants to join a group, either public or private, this function is called to add the user to the group.
+ * If the group is private, a join request object is made and the admin of the group is notified.
+ * If the group is public, the user is added to the group.
+ * If the user has already been invited to the group, the user is added to the group.
+ * @param {*} req 
+ * @param {*} res 
+ */
 function joinGroupRequest(req, res) {
     const body = req.body.data;
     admin.database().ref("groups-v2").child(body.groupId).once('value', (snapshot) => {
@@ -82,22 +90,10 @@ function joinGroupRequest(req, res) {
         }
         if (group.visibility == "public") {
             //append groupId to user's list of groups
-            admin.database().ref("approvedNumbers").child(body.userId).child('groups').once('value', (snapshotGroups) => {
-                var groups = snapshotGroups.val()
-                if (groups == null) {
-                    groups = []
-                }
-                if (groups.includes(body.groupId)) {
-                    res.send({ "data": { "result": "failure", "reason": "already in group" } })
-                } else {
-                    groups.push(body.groupId)
-                    admin.database().ref("approvedNumbers").child(body.userId).child("groups").update(groups)
-                    res.send({ "data": { "result": "success" } })
-                }
-            })
+            addGroupToUser();
         } else if (group.visibility == "private") {
             const request = {
-                "userId": body.userId, "status": "pending", "dateInitiated": new Date().getTime()
+                "userId": body.userId, "status": "pending", "dateInitiated": new Date().getTime(), "groupId" : body.groupId
             }
 
             //find any existing, pending and delete
@@ -110,6 +106,7 @@ function joinGroupRequest(req, res) {
                 }
                 //add new request
                 admin.database().ref("joinRequests").child(body.groupId).push(request)
+                //todo notify admins
             });
 
             res.send({ "data": { "result": "pending" } })
@@ -117,6 +114,22 @@ function joinGroupRequest(req, res) {
             //TODO How can this happen?
         }
     }).catch((error) => { console.error(error); res.send(500, { "data": { "result": "failure", "reason": error } }); });
+
+    function addGroupToUser() {
+        admin.database().ref("approvedNumbers").child(body.userId).child('groups').once('value', (snapshotGroups) => {
+            var groups = snapshotGroups.val();
+            if (groups == null) {
+                groups = [];
+            }
+            if (groups.includes(body.groupId)) {
+                res.send({ "data": { "result": "failure", "reason": "already in group" } });
+            } else {
+                groups.push(body.groupId);
+                admin.database().ref("approvedNumbers").child(body.userId).child("groups").update(groups);
+                res.send({ "data": { "result": "success" } });
+            }
+        });
+    }
 }
 
 
