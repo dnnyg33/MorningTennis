@@ -1,30 +1,188 @@
 {
-  "rules": {
-    "sorted": {
-      ".write": false,
-      ".read": true
-    },
-    "sorted-v2": {
-      ".write": false,
-      ".read": true
-    },
-    "incoming": {
-      ".read": true,
-      ".write": true
-    },
-    "incoming-v2": {
-      "$date": {
-        "$phoneNumber": {
-          ".read": true,
-          ".write": "root.child('approvedNumbers').hasChild(newData.child('phoneNumber').val())"
+    "rules":
+    {
+        "sorted":
+        {
+            "$date":
+            {
+                "slots":
+                {
+                    ".write": true
+                }
+            },
+            ".write": false,
+            ".read": true
+        },
+        "sorted-v3":
+        {
+            "$date":
+            {
+                "$dayName":
+                {
+                    "$playerLocation":
+                    {
+                        ".write": "data.child('phoneNumber').val() == newData.child('phoneNumber').val() || newData.child('adminUpdated').val() == 'true'",
+                        ".read": true
+                    }
+                }
+            },
+            ".write": false,
+            ".read": true
+        },
+        "sorted-v4":
+        {
+            "$date":
+            {
+                "$dayName":
+                {
+                    "$playerLocation":
+                    {
+                        ".write": "data.child('phoneNumber').val() == newData.child('phoneNumber').val() || newData.child('adminUpdated').val() == 'true'",
+                        ".read": true
+                    }
+                }
+            },
+            ".write": false,
+            ".read": true
+        },
+        "sorted-v5":
+        {
+            "$groupId":
+            {
+                "$sortingAlgorithm":
+                {
+                    "$date":
+                    {
+                        "$dayName":
+                        {
+                            "players":
+                            {
+                                "$playerLocation":
+                                {
+                                    ".write": "data.child('phoneNumber').val() == newData.child('phoneNumber').val() || newData.child('adminUpdated').val() == 'true'",
+                                    ".read": true
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            ".write": false,
+            ".read": true
+        },
+        "sorted-v2":
+        {
+            "$date":
+            {
+                "slots":
+                {
+                    ".write": true
+                },
+                "$dayName":
+                {
+                    "$playerLocation":
+                    {
+                        ".write": "data.child('phoneNumber').val() == newData.child('phoneNumber').val() || newData.child('adminUpdated').val() == 'true'",
+                        ".read": true
+                    }
+                }
+            },
+            ".write": false,
+            ".read": true
+        },
+        "late-submissions":
+        {
+            ".write": false,
+            "$groupId":
+            {
+                ".write": true
+            }
+        },
+        "incoming":
+        {
+            ".read": true,
+            ".write": true
+        },
+        "incoming-v3":
+        {
+            "$groupId":
+            {
+                "$date":
+                {
+                    "$timestamp":
+                    {
+                        ".read": true,
+                        ".write": "root.child('approvedNumbers').child(newData.child('firebaseId').val()).child('suspended').val() != true"
+                    }
+                }
+            },
+            ".read": true
+        },
+        "incoming-v4":
+        {
+            "$groupId":
+            {
+                "$date":
+                {
+                    "$timestamp":
+                    {
+                        ".read": true,
+                        ".write": "root.child('approvedNumbers').child(newData.child('firebaseId').val()).child('suspended').val() != true"
+                    }
+                }
+            },
+            ".read": true
+        },
+        "incoming-v2":
+        {
+            ".write": false
+        },
+        "approvedNumbers":
+        {
+            ".read": true,
+            "$phoneNumber":
+            {
+                ".read": true,
+                ".write": "auth != null"
+            }
+        },
+        "groups":
+        {
+            ".read": true,
+            ".write": true,
+            "id":
+            {
+                ".write": false
+            }
+        },
+        "groups-v2":
+        {
+            ".read": true,
+            ".write": true,
+            "id":
+            {
+                ".write": false
+            }
+        },
+        "reservations":
+        {
+            ".read": true,
+            ".write": true
+        },
+        "member_rankings":
+        {
+            ".read": true,
+            ".write": true
+        },
+        "subscriptions":
+        {
+            ".read": "auth != null",
+            ".write": "auth != null"
+        },
+        "joinRequests":
+        {
+            ".read": true,
+            ".write": "auth != null"
         }
-      }
-    },
-    "approvedNumbers": {
-      "$phoneNumber": {
-        ".read": true,
-        ".write": "root.child('approvedNumbers').hasChild($phoneNumber)"
-      }
     }
-  }
 }
