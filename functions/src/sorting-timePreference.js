@@ -20,6 +20,10 @@ function tennisSort(data) {
 
     for (const [key, item] of Object.entries(uniqueData)) {
         playerCount++
+        if (item.choices == undefined) {
+            console.log("Skipping " + item.name + " because they have no choices")
+            continue
+        }
         for (let index = 0; index < item.choices.length; index++) {
             const choice = item.choices[index];
             const listName = "sorted" + index

@@ -52,6 +52,10 @@ function tennisSortBySkill(data, playerInfoMap) {
         //for each nonnull choice, add item to map using choice as key
         // console.log("item: " + JSON.stringify(item))
         const choices = playerSubmission.choices;
+        if (choices == undefined) {
+            console.log("Skipping " + playerSubmission.name + " because they have no choices")
+            continue
+        }
         for (let index = 0; index < choices.length; index++) {
             const choice = choices[index];
             addChoiceToDay(playerSubmission, choice)
@@ -104,6 +108,7 @@ function tennisSortBySkill(data, playerInfoMap) {
                     if (player.phoneNumber === chosenPlayer.phoneNumber) {
                         player.maxDays = chosenPlayer.maxDays - 1;
                         if (player.maxDays == 0) {
+                            //todo remove this player from all days
                             player.goodwill = 0;
                         } else {
                             player.goodwill = (player.goodwill) / 2;
