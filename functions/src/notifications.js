@@ -1,4 +1,4 @@
-module.exports.run_rsvpNotification = run_rsvpNotification;
+module.exports.run_rsvpNotification = run_announceNotComingNotification;
 module.exports.run_reminderNotificationsForAllGroups = run_reminderNotificationsForAllGroups;
 module.exports.run_procastinatorNotification = run_procastinatorNotification;
 module.exports.run_scheduleNotification = run_scheduleNotification;
@@ -6,26 +6,26 @@ module.exports.run_scheduleNotification = run_scheduleNotification;
 const admin = require("firebase-admin");
 const index = require("./index.js")
 
-function run_rsvpNotification(body, res) {
-    console.log("run_rsvpNotification:body " + JSON.stringify(body))
-    if (body.position == null || body.position === "") {
+async function run_announceNotComingNotification(data, res) {
+    console.log("run_rsvpNotification:data " + JSON.stringify(data))
+    if (data.position == null || data.position === "") {
         res.status(400).send("Please provide position")
         return;
     }
-    if (body.weekPath == null || body.weekPath === "") {
+    if (data.weekPath == null || data.weekPath === "") {
         res.status(400).send("Please provide weekPath")
         return;
     }
-    if (body.dayName == null || body.dayName === "") {
+    if (data.dayName == null || data.dayName === "") {
         res.status(400).send("Please provide dayName")
         return;
     }
 
-    const position = parseInt(body.position)
-    const weekPath = body.weekPath
-    const dayName = body.dayName
+    const position = parseInt(data.position)
+    const weekPath = data.weekPath
+    const dayName = data.dayName
     const today = new Date()
-    const offsetHours = body.offsetHours ? body.offsetHours : -6
+    const offsetHours = data.offsetHours ? data.offsetHours : -6
     const dayNumber = index.dayOfWeekAsInteger(dayName)
     //if rsvp is in the past, just break
     if (dayNumber < new Date().getDay()) {
@@ -39,7 +39,7 @@ function run_rsvpNotification(body, res) {
         admin.database().ref(weekPath).once('value', (snapshot) => {
             const weekData = snapshot.val()
             console.log("weekData: " + JSON.stringify(weekData))
-            const dayData = weekData[dayName]
+            const dayData = weekData[dayName].players
             var phoneNumbers = []
             for (const [userKey, userValue] of Object.entries(dayData)) {
                 let cleanNumber = userValue.phoneNumber.toString().replace(/\D/g, '')
@@ -56,12 +56,13 @@ function run_rsvpNotification(body, res) {
                 };
                 console.log(message.notification.body)
                 sendNotificationsToGroup(message, registrationTokens)
+                res.status(200)
             })
         })
     } else {
         admin.database().ref(weekPath).once('value', (snapshot) => {
             const weekData = snapshot.val()
-            const dayData = weekData[dayName]
+            const dayData = weekData[dayName].players
             var slots = 4;
             if (weekData.slots != null) {
                 slots = weekData.slots[dayName]
@@ -96,6 +97,7 @@ function run_rsvpNotification(body, res) {
                     "tokens": registrationTokens,
                 };
                 sendNotificationsToGroup(message, registrationTokens)
+                res.status(200)
             })
         })
     }
