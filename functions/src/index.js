@@ -45,7 +45,7 @@ exports.lateSubmissions = functions.database.ref("late-submissions/{groupId}/{we
     const groupId = context.params.groupId;
     const weekName = context.params.weekName;
     const day = context.params.day
-    const writeLocationV3 = "sorted-v5/" + groupId + "/" + "timePreference/" + weekName + "/" + day
+    const writeLocationV3 = "sorted-v5/" + groupId + "/" + "timePreference/" + weekName + "/" + day + "/players"
     const writeLocationV4 = "sorted-v5/" + groupId + "/" + "balanceSkill/" + weekName + "/" + day + "/players"
     return crud.processLateSubmission(snapshot, writeLocationV3).then(() =>
         crud.processLateSubmission(snapshot, writeLocationV4))
@@ -60,8 +60,9 @@ exports.testSendNotification = functions.https.onRequest(async (req, res) => {
 
 
 //A notification for an alternate who has been promoted to player due to an RSVP event or for a last minute change.
-exports.sendRSVPInformNotification = functions.https.onRequest((req, res) => {
-    notifications.run_procastinatorNotification(req.body, res)
+exports.sendRSVPUpdateNotification = functions.https.onRequest((req, res) => {
+    console.log("run_rsvpNotification:body " + JSON.stringify(req.body))
+    notifications.run_rsvpNotification(req.body.data, res)
 })
 
 
@@ -141,6 +142,9 @@ exports.scheduleOpenNotification = functions.pubsub.schedule('00 8 * * FRI')
     })
     exports.deleteAccount = functions.https.onRequest((req, res) => {
         crud.deleteAccount(req, res)
+    })
+    exports.inviteUserToGroup = functions.https.onRequest((req, res) => {
+        crud.inviteUserToGroup(req, res)
     })
 
 
