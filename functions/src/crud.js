@@ -6,6 +6,7 @@ module.exports.joinGroupRequest = joinGroupRequest;
 module.exports.toggleAdmin = toggleAdmin;
 module.exports.approveJoinRequest = approveJoinRequest;
 module.exports.modifyGroupMember = modifyGroupMember;
+module.exports.inviteUserToGroup = inviteUserToGroup;
 module.exports.deleteAccount = deleteAccount;
 
 
@@ -33,30 +34,34 @@ function createUser(req, res) {
         for (const [key, serverUser] of Object.entries(allUsers)) {
             if ((body.phoneNumber != null && body.phoneNumber == serverUser.phoneNumber) ||
                 (body.email != null && body.email == serverUser.email)) {
-                //if found, update tokens and return
-                if(body.tokens == null) {
-                    res.status(200).send({ "data": serverUser });
-                    return;
-                }
-                serverUser.tokens = body.tokens;
+                //if found existing user, update tokens and last visited and return
+                serverUser.tokens = body.tokens ?? "none";
+                //create new human readable UTC date timestamp
+                serverUser.lastVisited = new Date().toString();
+                serverUser.firebaseId = body.firebaseId;
                 admin.database().ref("approvedNumbers").child(key).update(serverUser);
                 res.status(200).send({ "data": serverUser });
                 return;
             }
         }
         //check invitedUsers table and add any outstanding groups
-        let invitedUserSnapshot = await admin.database().ref("invitedUsers").child(body.phoneNumber).once('value', (snapshot) => {
-            const invitedUser = snapshot.val();
-            if (invitedUser != null) {
-                console.log("invitedUser.groups: " + JSON.stringify(invitedUser.groups))
-                return invitedUser
-            }
+        let invitedUserSnapshot = await admin.database().ref("invitedUsers").once('value', (snapshot) => {
+            const invitedUsers = snapshot.val();
+            return invitedUsers;
         });
         let preExistingGroups = []
         if (invitedUserSnapshot.val() != null) {
-            // Remove invited user entry if it exists
-            admin.database().ref("invitedUsers").child(body.phoneNumber).remove()
-            preExistingGroups = invitedUserSnapshot.val().groups
+            const data = invitedUserSnapshot.val()
+            for (const [key, invitedUser] of Object.entries(data)) {
+                if (key == body.phoneNumber) {
+                    for (const [pushKey, invite] of Object.entries(invitedUser)) {
+                        console.log("invite: " + JSON.stringify(invite))
+                        //add all groups distinctly
+                        preExistingGroups = preExistingGroups.includes(invite.group) ? preExistingGroups : [...preExistingGroups, invite.group]
+                    }
+                }
+            }
+            console.log("preExistingGroups: " + JSON.stringify(preExistingGroups))
         }
 
         const newUser = {
@@ -66,9 +71,9 @@ function createUser(req, res) {
             firebaseId: body.firebaseId,
             groups: preExistingGroups,
         };
-        console.log("newUser: " + JSON.stringify(removeNullUndefined(newUser)))
-        admin.database().ref("approvedNumbers").child(body.firebaseId).set(removeNullUndefined(newUser));
-        res.status(201).send({ "data": newUser });
+        console.log("newUser: " + JSON.stringify(newUser))
+        admin.database().ref("approvedNumbers").child(body.firebaseId).set(newUser);
+        res.status(200).send({ "data": newUser });
     })
 };
 
@@ -124,6 +129,9 @@ function joinGroupRequest(req, res) {
             if (groups.includes(body.groupId)) {
                 res.send({ "data": { "result": "failure", "reason": "already in group" } });
             } else {
+                 //create member_ranking for this user
+                 admin.database().ref("member_rankings").child(body.groupId).child(body.userId).set({ "utr": 4, "goodwill": 1 })
+
                 groups.push(body.groupId);
                 admin.database().ref("approvedNumbers").child(body.userId).child("groups").update(groups);
                 res.send({ "data": { "result": "success" } });
@@ -205,7 +213,7 @@ function approveJoinRequest(req, res) {
                     }
                 })
                 //create member_ranking for this user
-                admin.database().ref("member_rankings").child(body.groupId).child(body.userId).set({ "utr": 40, "goodwill": 1 })
+                admin.database().ref("member_rankings").child(body.groupId).child(body.userId).set({ "utr": 4, "goodwill": 1 })
 
                 //send notification to user
                 admin.database().ref("approvedNumbers").child(body.userId).once('value', (snapshot) => {
@@ -227,39 +235,50 @@ function approveJoinRequest(req, res) {
     });
 };
 
-/** This method is to update an existing group members utr or goodwill. It can also be used to invite a new member to a group.
- * Phone numbers can be invited as group members before they are users. Or if a user exists, it is added directly as a group member
- * @param userPublicId - the user being invited to the group as entered by the user (only phone numbers supported). Since this value can be entered by an admin, 
- * the value is the publicId.
+
+/**
+ * This method is to invite an existing user to a new group or to invite a new user to a group. 
+ * In the case of a new user, the phone number is added to the invitedUsers table.
+ * In the case of an existing user, the user is added to the group and the member_ranking is created.
+ * @param userPublicId - the user being invited to the group as entered by the user (only phone numbers supported). Since this value can be entered by an admin,
  * @param groupId - the group being invited to
  * @param adminId - the user who is inviting the new user
- * @param utr - the utr of the user being invited
- * @param goodwill - the goodwill of the user being invited
+ * @param utr - the utr of the user being invited (optional). If null, a default 4.0 is used.
+ * @param goodwill - the goodwill of the user being invited (optional). If null, a default 1.0 is used.
  */
-function modifyGroupMember(req, res) {
+function inviteUserToGroup(req, res) {
     const body = req.body.data;
     console.log("body: " + JSON.stringify(body))
     //check that adder is admin
-    admin.database().ref('groups').child(body.groupId).child("admins").once('value', (snapshot) => {
+    admin.database().ref('groups-v2').child(body.groupId).child("admins").once('value', (snapshot) => {
         const adminList = snapshot.val()
+        if (body.userPublicId == undefined || body.userPublicId == null) {
+            res.status(400).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "userPublicId is required" } })
+            return;
+        }
         if (body.adminId == undefined || body.adminId == null) {
             res.status(400).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "adminId is required" } })
             return;
         }
-        if (!adminList.includes(body.adminId)) {
+        var foundAdmin = false
+        for (const [key, value] of Object.entries(adminList)) {
+            if (value == body.adminId) {
+                foundAdmin = true
+            }
+        }
+        if (!foundAdmin) {
             console.log(body.adminId + " not found")
             res.status(401).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "adminId is not an admin of this group" } })
             return;
         }
+    }).then(() => {
         admin.database().ref("approvedNumbers").once('value', (snapshot) => {
-            var users = snapshot.val()
+            const users = snapshot.val()
             var foundUser = false
             for (const [key, user] of Object.entries(users)) {
                 if (user.phoneNumber == body.userPublicId) {
                     console.log("Found user: " + JSON.stringify(user))
                     foundUser = true;
-                    //update member_ranking for groupId
-                    admin.database().ref("member_rankings").child(body.groupId).child(key).update({ "utr": body.utr, "goodwill": body.goodwill })
                     if (user.groups == null) {
                         user.groups = [body.groupId]
                         console.log("User updated with group: " + JSON.stringify(user))
@@ -273,15 +292,58 @@ function modifyGroupMember(req, res) {
                         admin.database().ref("approvedNumbers").child(key).update(user)
                         res.status(200).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "Existing user added to new group" } })
                     }
+                    //create member_ranking for this user
+                    admin.database().ref("member_rankings").child(body.groupId).child(key).set({ "utr": body.utr ?? 4, "goodwill": body.goodwill ?? 1 })
                     return;
                 }
             }
             if (!foundUser) {
-                var newUser = { "groups": [body.groupId], "adminId": body.adminId, "dateInvited": new Date().getTime() }
-                admin.database().ref("invitedUsers").child(body.userPublicId).set(newUser)
+                var newUser = { "group": body.groupId, "adminId": body.adminId, "dateInvited": new Date().getTime() }
+                admin.database().ref("invitedUsers").child(body.userPublicId).push().set(newUser)
                 res.status(200).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "User invited to group. Once they create an account they will be added to the group." } })
             }
         })
+    })
+}
+
+
+/** This method is to update an existing group members utr, goodwill, or suspended value.
+ * @param groupId - the specific group this user's data is being modified in. Only a user can modify their own data, but this is group/user data.
+ * @param adminId - the admin of the group
+ * @param utr - the utr of the user being updated
+ * @param goodwill - the goodwill of the user being updated
+ * @param suspended - whether the user is suspended from the group
+ * @param firebaseId - the firebaseId of the user being modified. If this value cannot be provided, the invitedUserToGroup function should be called.
+ */
+function modifyGroupMember(req, res) {
+    const body = req.body.data;
+    console.log("body: " + JSON.stringify(body))
+    //check that modifier is admin
+    admin.database().ref('groups-v2').child(body.groupId).child("admins").once('value', (snapshot) => {
+        const adminList = snapshot.val()
+        if (body.adminId == undefined || body.adminId == null) {
+            res.status(400).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "adminId is required" } })
+            return;
+        }
+        var foundAdmin = false
+        for (const [key, value] of Object.entries(adminList)) {
+            if (value == body.adminId) {
+                foundAdmin = true
+            }
+        }
+        if (!foundAdmin) {
+            console.log(body.adminId + " not found")
+            res.status(401).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "adminId is not an admin of this group" } })
+            return;
+        }
+        if (body.firebaseId == null || body.firebaseId == undefined) {
+            res.status(400).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "firebaseId is required" } })
+            return;
+        } else {
+            //todo check that firebaseId is in group
+            admin.database().ref("member_rankings").child(body.groupId).child(body.firebaseId).update({ "utr": body.utr, "goodwill": body.goodwill, "suspended": body.suspended })
+            res.status(200).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "User updated" } })
+        }
     })
 }
 
@@ -370,3 +432,5 @@ function processLateSubmission(snapshot, writeLocation) {
         admin.database().ref(newPlayerRef).set(newPlayerObj)
     })
 }
+
+const removeNullUndefined = obj => Object.entries(obj).filter(([_, v]) => v != null).reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {});
