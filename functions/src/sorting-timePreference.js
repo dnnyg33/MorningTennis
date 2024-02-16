@@ -6,7 +6,10 @@ const index = require('./index.js')
 function runSort(original, groupId, weekName) {
     var groups = tennisSort(original)
     admin.database().ref("sorted-v3").child(groupId).child(weekName).set(groups)
-    admin.database().ref("sorted-v5").child(groupId).child("timePreference").child(weekName).set(groups)
+    admin.database().ref("sorted-v6").child(groupId).child("timePreference").child(weekName).set(groups)
+    const v5Result = index.removeEmptyDays(groups)
+    admin.database().ref("sorted-v5").child(groupId).child("timePreference").child(weekName).set(v5Result)
+    
     return groups;
 }
 
@@ -44,7 +47,7 @@ function tennisSort(data) {
         sortedList = sortedList.concat(list)
     }
 
-    let daysMap = {}
+    let daysMap = {"Monday": 0, "Tuesday": 0, "Wednesday": 0, "Thursday": 0, "Friday": 0}
 
     sortedList.forEach(playerPreference => {
         let person = uniqueData.find(x => x.phoneNumber == playerPreference.phoneNumber)

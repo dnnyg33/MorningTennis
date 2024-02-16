@@ -9,10 +9,14 @@ async function runSort(incomingSubmissionsData, groupId, weekName) {
     const memberRankingsSnapshot = await admin.database().ref('member_rankings').child(groupId).get();
     const result = tennisSortBySkill(incomingSubmissionsData, memberRankingsSnapshot.val())
     admin.database().ref("sorted-v4").child(groupId).child(weekName).set(result)
-    admin.database().ref("sorted-v5").child(groupId).child("balanceSkill").child(weekName).set(result)
+    admin.database().ref("sorted-v6").child(groupId).child("balanceSkill").child(weekName).set(result)
+    const v5Result = index.removeEmptyDays(result)
+    admin.database().ref("sorted-v5").child(groupId).child("balanceSkill").child(weekName).set(v5Result)
+    
     admin.database().ref('groups-v2').child(groupId).child("scheduleIsBuilding").set(false);
     return result
 }
+
 
 function Combinations(arr, r) {
     // To avoid object referencing, cloning the array.
@@ -43,6 +47,7 @@ function Combinations(arr, r) {
 
 function tennisSortBySkill(data, playerInfoMap) {
     console.log("playerInfoMap: " + JSON.stringify(playerInfoMap))
+    console.log("data: " + JSON.stringify(data))
     let uniqueData = index.removeDuplicates(data)
     console.log("Unique Data: " + JSON.stringify(uniqueData))
     //make a map for each day with key as name of day
@@ -77,7 +82,9 @@ function tennisSortBySkill(data, playerInfoMap) {
         daysAvailable[key].push({ "name": playerSubmission.name, "phoneNumber": playerSubmission.phoneNumber, "maxDays": playerSubmission.maxDays, "utr": utr, "goodwill": goodwill });
     }
 
-    const weeklyMatches = {}
+    //todo: lookup group's playable days
+    const weeklyMatches = {"Monday": 0, "Tuesday": 0, "Wednesday": 0, "Thursday": 0, "Friday": 0}
+
     while (Object.keys(daysAvailable).length > 0) {
         const topComboOfWeek = findBestMatches(daysAvailable);
         if (topComboOfWeek == undefined) {
@@ -197,6 +204,7 @@ function sortCombosByHighestQuality(combinations, allSignupsForDay) {
 
 }
 function getPlayerSummary(element) {
+    if (element == null) return ""
     if (element.length < 4) return ""
     return element[0].name + "+" + element[3].name + " vs. " + element[1].name + "+" + element[2].name
 }

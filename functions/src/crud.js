@@ -39,6 +39,7 @@ function createUser(req, res) {
                 //create new human readable UTC date timestamp
                 serverUser.lastVisited = new Date().toString();
                 serverUser.firebaseId = body.firebaseId;
+                serverUser.appVersion = body.appVersion;
                 admin.database().ref("approvedNumbers").child(key).update(serverUser);
                 res.status(200).send({ "data": serverUser });
                 return;

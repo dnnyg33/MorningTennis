@@ -7,6 +7,7 @@ const crud = require("./crud.js")
 module.exports.dayOfWeekAsInteger = dayOfWeekAsInteger;
 module.exports.shortenedName = shortenedName;
 module.exports.removeDuplicates = removeDuplicates;
+module.exports.removeEmptyDays = removeEmptyDays;
 
 admin.initializeApp()
 
@@ -35,9 +36,11 @@ exports.testSort = functions.https.onRequest(async (req, res) => {
     console.log(req.query)
     const groupId = req.query["groupId"];
     const weekName = req.query["weekName"];
-    const incomingSubmissionsData = req.body[weekName];
+    const incomingSubmissionsData = req.body[weekName] ?? (await admin.database().ref("incoming-v4").child(groupId).child(weekName).get()).val()
     const result = await sortingBalanceSkill.runSort(incomingSubmissionsData, groupId, weekName);
+    console.log("result: " + JSON.stringify(result))
     const result2 = sortingTimePreference.runSort(incomingSubmissionsData, groupId, weekName);
+    console.log("result2: " + JSON.stringify(result2))
     res.send({"balanceSkill": result, "timePreference": result2})
 })
 
@@ -209,4 +212,16 @@ function removeDuplicates(data) {
 
     }
     return uniquePlayers
+}
+
+//todo: this function can be removed once app versions are above 28
+function removeEmptyDays(result) {
+    //remove days where value is 0
+    const v5Result = {}
+    for (const [key, value] of Object.entries(result)) {
+        if (value != 0) {
+            v5Result[key] = value
+        }
+    }
+    return v5Result;
 }
