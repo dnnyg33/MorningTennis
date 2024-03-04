@@ -168,7 +168,7 @@ async function sendNotificationsToGroup(message, registrationTokens) {
     }
 }
 
-
+/**"You are schedule to play with {groupName}." */
 async function run_reminderNotificationsForAllGroups() {
     const today = new Date()
     let tomorrow = new Date()
@@ -181,11 +181,7 @@ async function run_reminderNotificationsForAllGroups() {
         for (const [key, groupValue] of Object.entries(data)) {
             const groupName = groupValue.name
             let playersRef;
-            if (groupValue.sortingAlgorithm == "timePreference") {
-                playersRef = "sorted-v3/" + key + "/" + getDBRefOfCurrentWeekName() + "/" + dayName
-            } else {
-                playersRef = "sorted-v4/" + key + "/" + getDBRefOfCurrentWeekName() + "/" + dayName + "/players"
-            }
+                playersRef = "sorted-v6/" + key + "/" + groupValue.sortingAlgorithm + "/" + getDBRefOfCurrentWeekName() + "/" + dayName + "/players"
 
             console.log("\nBuilding notifications for " + playersRef)
             await buildNotificationsForDay(playersRef, key, groupName);
@@ -229,7 +225,7 @@ async function run_reminderNotificationsForAllGroups() {
         });
     }
 }
-
+/**"You have not signed up to play with {groupName}"*/
 async function run_procastinatorNotification() {
     const dayName = new Date().toLocaleString('en-us', { weekday: 'long' })
     console.log(getDBRefOfCurrentWeekName())
@@ -244,7 +240,7 @@ async function run_procastinatorNotification() {
                     if (groupWeekSubmissions == null) return;
                     var registeredNumbers = []
                     for (const [key, submission] of Object.entries(groupWeekSubmissions)) {
-                        registeredNumbers.push(submission.phoneNumber)
+                        registeredNumbers.push(submission.firebaseId)
                     }
 
                     await admin.database().ref("approvedNumbers").once('value', async (snapshot2) => {
@@ -254,14 +250,14 @@ async function run_procastinatorNotification() {
                         var allUsersInGroup = []
                         for (const [userKey, userValue] of Object.entries(userData)) {
                             if (userValue.groups != null && userValue.groups.includes(groupId)) {
-                                allUsersInGroup.push({ "phoneNumber": userKey, "name": userValue.name })
+                                allUsersInGroup.push({ "firebaseId": userKey, "name": userValue.name })
                             }
                         }
 
-                        var procrastinators = allUsersInGroup.filter((user) => !registeredNumbers.includes(user.phoneNumber));
+                        var procrastinators = allUsersInGroup.filter((user) => !registeredNumbers.includes(user.firebaseId));
                         console.log("procrastinators in group " + groupId)
                         console.log(procrastinators)
-                        var numbersOnly = procrastinators.map((user) => user.phoneNumber)
+                        var numbersOnly = procrastinators.map((user) => user.firebaseId)
                         await getNotificationGroup(numbersOnly).then(registrationTokens => {
                             const message = {
                                 "notification": {

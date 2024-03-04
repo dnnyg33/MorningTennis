@@ -57,7 +57,7 @@ exports.lateSubmissions = functions.database.ref("late-submissions/{groupId}/{we
 
 
 exports.testSendNotification = functions.https.onRequest(async (req, res) => {
-    notifications.run_scheduleNotification(req, res)
+    notifications.run_procastinatorNotification()
     res.end("Done")
 })
 
