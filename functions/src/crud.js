@@ -35,7 +35,7 @@ function createUser(req, res) {
             if ((body.phoneNumber != null && body.phoneNumber == serverUser.phoneNumber) ||
                 (body.email != null && body.email == serverUser.email)) {
                 //if found existing user, update tokens and last visited and return
-                serverUser.tokens = body.tokens ?? "none";
+                serverUser.tokens = body.tokens ?? {};
                 //create new human readable UTC date timestamp
                 serverUser.lastVisited = new Date().toString();
                 serverUser.firebaseId = body.firebaseId;
@@ -250,7 +250,6 @@ function approveJoinRequest(req, res) {
 function inviteUserToGroup(req, res) {
     const body = req.body.data;
     console.log("body: " + JSON.stringify(body))
-    //check that adder is admin
     admin.database().ref('groups-v2').child(body.groupId).child("admins").once('value', (snapshot) => {
         const adminList = snapshot.val()
         if (body.userPublicId == undefined || body.userPublicId == null) {
