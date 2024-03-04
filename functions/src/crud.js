@@ -293,17 +293,26 @@ function inviteUserToGroup(req, res) {
                         res.status(200).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "Existing user added to new group" } })
                     }
                     //create member_ranking for this user
-                    admin.database().ref("member_rankings").child(body.groupId).child(key).set({ "utr": body.utr ?? 4, "goodwill": body.goodwill ?? 1 })
+                    createMemberRanking(key);
                     return;
                 }
-            }
+            }       
             if (!foundUser) {
-                var newUser = { "group": body.groupId, "adminId": body.adminId, "dateInvited": new Date().getTime() }
-                admin.database().ref("invitedUsers").child(body.userPublicId).push().set(newUser)
+                var newUser = { "group": body.groupId, "adminId": body.adminId, "dateInvited": new Date().getTime(), "publicId": body.userPublicId, "providedName": body.providedName }
+                let pushKey = admin.database().ref("invitedUsers").child(body.userPublicId).push()
+                pushKey.set(newUser)
+                console.log("pushKey: " + JSON.stringify(pushKey))
+                createMemberRanking(body.userPublicId);
                 res.status(200).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "User invited to group. Once they create an account they will be added to the group." } })
             }
         })
     })
+
+    function createMemberRanking(key) {
+        if (body.utr != null && body.goodwill != null) {
+            admin.database().ref("member_rankings").child(body.groupId).child(key).set({ "utr": body.utr, "goodwill": body.goodwill });
+        }
+    }
 }
 
 
