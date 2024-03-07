@@ -41,7 +41,7 @@ exports.testSort = functions.https.onRequest(async (req, res) => {
     console.log("result: " + JSON.stringify(result))
     const result2 = sortingTimePreference.runSort(incomingSubmissionsData, groupId, weekName);
     console.log("result2: " + JSON.stringify(result2))
-    res.send({"balanceSkill": result, "timePreference": result2})
+    res.send({ "balanceSkill": result, "timePreference": result2 })
 })
 
 exports.lateSubmissions = functions.database.ref("late-submissions/{groupId}/{weekName}/{day}/{pushKey}").onWrite((snapshot, context) => {
@@ -120,28 +120,29 @@ exports.scheduleOpenNotification = functions.pubsub.schedule('00 8 * * FRI')
     });
 
 
-    ///CRUD
-    module.exports.createUser = functions.https.onRequest((req, res) => {
-        crud.createUser(req, res)
-    })
-    exports.joinGroupRequest = functions.https.onRequest((req, res) => {
-        crud.joinGroupRequest(req, res)
-    })
-    exports.toggleAdmin = functions.https.onRequest((req, res) => {
-        crud.toggleAdmin(req, res)
-    })
-    exports.approveJoinRequest = functions.https.onRequest((req, res) => {
-        crud.approveJoinRequest(req, res)
-    })
-    exports.modifyGroupMember = functions.https.onRequest((req, res) => {
-        crud.modifyGroupMember(req, res)
-    })
-    exports.deleteAccount = functions.https.onRequest((req, res) => {
-        crud.deleteAccount(req, res)
-    })
-    exports.inviteUserToGroup = functions.https.onRequest((req, res) => {
-        crud.inviteUserToGroup(req, res)
-    })
+///CRUD
+module.exports.createUser = functions.https.onRequest((req, res) => {
+    crud.createUser(req, res)
+})
+exports.joinGroupRequest = functions.https.onRequest((req, res) => {
+    crud.joinGroupRequest(req, res)
+})
+exports.toggleAdmin = functions.https.onRequest((req, res) => {
+    crud.toggleAdmin(req, res)
+})
+exports.approveJoinRequest = functions.https.onRequest((req, res) => {
+    crud.approveJoinRequest(req, res)
+})
+exports.modifyGroupMember = functions.https.onRequest((req, res) => {
+    crud.modifyGroupMember(req, res)
+})
+exports.deleteAccount = functions.https.onRequest((req, res) => {
+    crud.deleteAccount(req, res)
+})
+exports.inviteUserToGroup = functions.https.onRequest((req, res) => {
+    crud.inviteUserToGroup(req, res)
+})
+
 
 function run_openScheduleCommand() {
     admin.database().ref("groups-v2").once('value', (snapshot) => {
@@ -199,12 +200,12 @@ const removeNullUndefined = obj => Object.entries(obj).filter(([_, v]) => v != n
 function shortenedName(name) {
     var parts = name.split(" ");
     switch (parts.length) {
-      case 1:
-        return this;
-      case 2:
-        return `${parts[0]} ${parts[1].substring(0, 1)}.`;
-      case 3:
-        return `${parts[0]} ${parts[1].substring(0, 1)} ${parts[2]}`;
+        case 1:
+            return this;
+        case 2:
+            return `${parts[0]} ${parts[1].substring(0, 1)}.`;
+        case 3:
+            return `${parts[0]} ${parts[1].substring(0, 1)} ${parts[2]}`;
     }
 }
 
