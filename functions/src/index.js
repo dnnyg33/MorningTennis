@@ -116,14 +116,7 @@ exports.scheduleCloseScheduleCommand = functions.pubsub.schedule('05 20 * * SUN'
 exports.scheduleOpenNotification = functions.pubsub.schedule('00 8 * * FRI')
     .timeZone('America/Denver')
     .onRun((context) => {
-        admin.database().ref("groups-v2").once('value', (snapshot) => {
-            const groupsData = snapshot.val();
-            for (const [groupName, submission] of Object.entries(groupsData)) {
-                admin.database().ref("groups-v2").child(groupName).child("scheduleIsOpen").set(true)
-            }
-            //TODO when schedule timing is dynamic, this will need to be specific to each group so that users aren't blasted for groups they aren't in
-            notifications.run_scheduleNotification(null, "Schedule now open", "You can now sign up for next week's schedule in the app.")
-        });
+        run_openScheduleCommand();
     });
 
 
@@ -150,6 +143,26 @@ exports.scheduleOpenNotification = functions.pubsub.schedule('00 8 * * FRI')
         crud.inviteUserToGroup(req, res)
     })
 
+function run_openScheduleCommand() {
+    admin.database().ref("groups-v2").once('value', (snapshot) => {
+        const groupsData = snapshot.val();
+        for (const [groupId, groupData] of Object.entries(groupsData)) {
+            admin.database().ref("groups-v2").child(groupId).child("scheduleIsOpen").set(true);
+            //create empty week
+            let startDayInt = dayOfWeekAsInteger(groupData.weekStartDay ?? "Monday");
+            let now = new Date();
+            let diff = ((startDayInt + 7) - now.getDay()) % 7;
+            let startDate = now.addDays(diff);
+            let path = groupData.weekStartDay + fmt(startDate, "-MM-DD-YYYY");
+            admin.database().ref("incoming-v4").child(groupId).child(path).child("1").set({
+                "firebaseId": "weekStart",
+            });
+
+        }
+        //TODO when schedule timing is dynamic, this will need to be specific to each group so that users aren't blasted for groups they aren't in
+        notifications.run_scheduleNotification(null, "Schedule now open", "You can now sign up for next week's schedule in the app.");
+    });
+}
 
 
 
@@ -224,4 +237,19 @@ function removeEmptyDays(result) {
         }
     }
     return v5Result;
+}
+
+function fmt(date, format = 'YYYY-MM-DDThh:mm:ss') {
+    const pad2 = (n) => n.toString().padStart(2, '0');
+
+    const map = {
+        YYYY: date.getFullYear(),
+        MM: pad2(date.getMonth() + 1),
+        DD: pad2(date.getDate()),
+        hh: pad2(date.getHours()),
+        mm: pad2(date.getMinutes()),
+        ss: pad2(date.getSeconds()),
+    };
+
+    return Object.entries(map).reduce((prev, entry) => prev.replace(...entry), format);
 }
