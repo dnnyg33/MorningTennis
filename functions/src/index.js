@@ -147,22 +147,28 @@ exports.inviteUserToGroup = functions.https.onRequest((req, res) => {
 function run_openScheduleCommand() {
     admin.database().ref("groups-v2").once('value', (snapshot) => {
         const groupsData = snapshot.val();
+        createNewEmptyWeek(groupsData);
+        //TODO when schedule timing is dynamic, this will need to be specific to each group so that users aren't blasted for groups they aren't in
+        notifications.run_scheduleNotification(null, "Schedule now open", "You can now sign up for next week's schedule in the app.");
+    });
+
+    function createNewEmptyWeek(groupsData) {
         for (const [groupId, groupData] of Object.entries(groupsData)) {
             admin.database().ref("groups-v2").child(groupId).child("scheduleIsOpen").set(true);
-            //create empty week
-            let startDayInt = dayOfWeekAsInteger(groupData.weekStartDay ?? "Monday");
+            let weekStartDay = groupData.weekStartDay ?? "Monday";
+            let startDayInt = dayOfWeekAsInteger(weekStartDay);
             let now = new Date();
+            now.setDate(now.getDate() -8);
             let diff = ((startDayInt + 7) - now.getDay()) % 7;
             let startDate = now.addDays(diff);
-            let path = groupData.weekStartDay + fmt(startDate, "-MM-DD-YYYY");
+            let path = weekStartDay + fmt(startDate, "-M-D-YYYY");
+            console.log("path: " + path);
             admin.database().ref("incoming-v4").child(groupId).child(path).child("1").set({
                 "firebaseId": "weekStart",
             });
 
         }
-        //TODO when schedule timing is dynamic, this will need to be specific to each group so that users aren't blasted for groups they aren't in
-        notifications.run_scheduleNotification(null, "Schedule now open", "You can now sign up for next week's schedule in the app.");
-    });
+    }
 }
 
 
@@ -250,6 +256,8 @@ function fmt(date, format = 'YYYY-MM-DDThh:mm:ss') {
         hh: pad2(date.getHours()),
         mm: pad2(date.getMinutes()),
         ss: pad2(date.getSeconds()),
+        M: date.getMonth() +1,
+        D: date.getDate(),
     };
 
     return Object.entries(map).reduce((prev, entry) => prev.replace(...entry), format);
