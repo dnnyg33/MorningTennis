@@ -48,8 +48,8 @@ exports.lateSubmissions = functions.database.ref("late-submissions/{groupId}/{we
     const groupId = context.params.groupId;
     const weekName = context.params.weekName;
     const day = context.params.day
-    const writeLocationV3 = "sorted-v5/" + groupId + "/" + "timePreference/" + weekName + "/" + day + "/players"
-    const writeLocationV4 = "sorted-v5/" + groupId + "/" + "balanceSkill/" + weekName + "/" + day + "/players"
+    const writeLocationV3 = "sorted-v6/" + groupId + "/" + "timePreference/" + weekName + "/" + day + "/players"
+    const writeLocationV4 = "sorted-v6/" + groupId + "/" + "balanceSkill/" + weekName + "/" + day + "/players"
     return crud.processLateSubmission(snapshot, writeLocationV3).then(() =>
         crud.processLateSubmission(snapshot, writeLocationV4))
 })
