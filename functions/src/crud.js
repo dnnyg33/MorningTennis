@@ -35,11 +35,15 @@ function createUser(req, res) {
             if ((body.phoneNumber != null && body.phoneNumber == serverUser.phoneNumber) ||
                 (body.email != null && body.email == serverUser.email)) {
                 //if found existing user, update tokens and last visited and return
-                serverUser.tokens = body.tokens ?? {};
+                if (body.tokens != null) {
+                    serverUser.tokens = Object.assign(serverUser.tokens ?? {}, body.tokens);
+                }
                 //create new human readable UTC date timestamp
                 serverUser.lastVisited = new Date().toString();
                 serverUser.firebaseId = body.firebaseId;
                 serverUser.appVersion = body.appVersion;
+                console.log("serverUser: " + JSON.stringify(serverUser))
+                console.log("key: " + key)
                 admin.database().ref("approvedNumbers").child(key).update(serverUser);
                 res.status(200).send({ "data": serverUser });
                 return;

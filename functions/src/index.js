@@ -54,6 +54,27 @@ exports.lateSubmissions = functions.database.ref("late-submissions/{groupId}/{we
         crud.processLateSubmission(snapshot, writeLocationV4))
 })
 
+exports.logout = functions.https.onRequest((req, res) => {
+    console.log("logout function called")
+    console.log("req.body.data: " + JSON.stringify(req.body.data))
+    let body = req.body.data
+    if(body.firebaseId == null){
+        res.status(400).send("firebaseId is required")
+        return
+    }
+    if(body.deviceName == null){
+        res.status(400).send("deviceName is required")
+        return
+    }
+    admin.database().ref("approvedNumbers").child(body.firebaseId).child("tokens").child(body.deviceName).remove().then(() => {
+
+        res.status(200).send({"data": {"result": "success", "message": "logout successful"}})
+    }).catch((error) => {
+        console.log("error: " + error)
+        res.status(400).send({"data": {"result": "error", "message": error}})
+    })
+})
+
 
 
 exports.testSendNotification = functions.https.onRequest(async (req, res) => {
