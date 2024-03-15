@@ -66,20 +66,20 @@ function tennisSortBySkill(data, playerInfoMap) {
             addChoiceToDay(playerSubmission, choice)
         }
     }
-    // console.log(JSON.stringify(daysAvailable))
+    console.log("daysAvailable: " + JSON.stringify(daysAvailable))
 
 
     function addChoiceToDay(playerSubmission, key) {
         console.log("playerInfoMap: " + JSON.stringify(playerInfoMap))
-        const ranking = playerInfoMap[playerSubmission.phoneNumber]
-        let utr = 40
+        const ranking = playerInfoMap[playerSubmission.firebaseId]
+        let utr = 4
         let goodwill = 1
         if (ranking != null) {
             utr = ranking.utr
-            ranking.goodwill
+            goodwill = ranking.goodwill
         }
         daysAvailable[key] = daysAvailable[key] ?? [];
-        daysAvailable[key].push({ "name": playerSubmission.name, "phoneNumber": playerSubmission.phoneNumber, "maxDays": playerSubmission.maxDays, "utr": utr, "goodwill": goodwill });
+        daysAvailable[key].push({ "name": playerSubmission.name, "phoneNumber": playerSubmission.phoneNumber, "firebaseId": playerSubmission.firebaseId, "maxDays": playerSubmission.maxDays, "utr": utr, "goodwill": goodwill });
     }
 
     //todo: lookup group's playable days
@@ -112,7 +112,7 @@ function tennisSortBySkill(data, playerInfoMap) {
             for (const [key, day] of Object.entries(daysAvailable)) {
                 var playerCount = 0;
                 for (const [key, player] of Object.entries(day)) {
-                    if (player.phoneNumber === chosenPlayer.phoneNumber) {
+                    if (player.firebaseId === chosenPlayer.firebaseId) {
                         player.maxDays = chosenPlayer.maxDays - 1;
                         if (player.maxDays == 0) {
                             //todo remove this player from all days

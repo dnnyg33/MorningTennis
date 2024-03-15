@@ -1,7 +1,7 @@
-module.exports.run_rsvpNotification = run_announceNotComingNotification;
-module.exports.run_reminderNotificationsForAllGroups = run_reminderNotificationsForAllGroups;
+module.exports.run_announceNotComingNotification = run_announceNotComingNotification;
+module.exports.run_scheduledToPlayReminderForAllGroups = run_scheduledToPlayReminderForAllGroups;
 module.exports.run_procastinatorNotification = run_procastinatorNotification;
-module.exports.run_scheduleNotification = run_scheduleNotification;
+module.exports.run_signupStatusNotification = run_signupStatusNotification;
 
 const admin = require("firebase-admin");
 const index = require("./index.js")
@@ -40,13 +40,12 @@ async function run_announceNotComingNotification(data, res) {
             const weekData = snapshot.val()
             console.log("weekData: " + JSON.stringify(weekData))
             const dayData = weekData[dayName].players
-            var phoneNumbers = []
+            var firebaseIds = []
             for (const [userKey, userValue] of Object.entries(dayData)) {
-                let cleanNumber = userValue.phoneNumber.toString().replace(/\D/g, '')
-                phoneNumbers.push(cleanNumber.toString())
+                firebaseIds.push(userValue.firebaseId)
             }
-            console.log(phoneNumbers)
-            getNotificationGroup(phoneNumbers).then(registrationTokens => {
+            console.log(firebaseIds)
+            getRegistrationTokensFromFirebaseIds(firebaseIds).then(registrationTokens => {
                 const message = {
                     "notification": {
                         "title": "Last minute change!",
@@ -67,7 +66,7 @@ async function run_announceNotComingNotification(data, res) {
             if (weekData.slots != null) {
                 slots = weekData.slots[dayName]
             }
-            var phoneNumbers = []
+            var firebaseIds = []
             var index = 0
             var playersCount = 0
             for (const [userKey, userValue] of Object.entries(dayData)) {
@@ -80,15 +79,14 @@ async function run_announceNotComingNotification(data, res) {
                 index++
                 if (index <= position) continue;
                 if (userValue.isComing == null) {
-                    let cleanNumber = userValue.phoneNumber.toString().replace(/\D/g, '')
-                    phoneNumbers.push(cleanNumber.toString())
+                    firebaseIds.push(userValue.firebaseId)
 
                 }
 
             }
-            console.log(phoneNumbers)
+            console.log("firebaseIds: " + firebaseIds)
 
-            getNotificationGroup(phoneNumbers).then(registrationTokens => {
+            getRegistrationTokensFromFirebaseIds(firebaseIds).then(registrationTokens => {
                 const message = {
                     "notification": {
                         "title": "You've been promoted to play (" + dayName + ")!",
@@ -104,8 +102,8 @@ async function run_announceNotComingNotification(data, res) {
 }
 
 
-function run_scheduleNotification(res, title, body) {
-    getNotificationGroup().then(registrationTokens => {
+function run_signupStatusNotification(res, title, body) {
+    getRegistrationTokensFromFirebaseIds().then(registrationTokens => {
         const message = {
             "notification": {
                 "title": title,
@@ -120,9 +118,9 @@ function run_scheduleNotification(res, title, body) {
 
 
 /**If recipients is null, sends to all users in approvedNumbers */
-async function getNotificationGroup(recipients) {
-    console.log("preparing to send push to " + recipients)
-    return admin.database().ref("approvedNumbers").once('value', (snapshot) => { })
+async function getRegistrationTokensFromFirebaseIds(firebaseIds) {
+    console.log("preparing to send push to " + firebaseIds)
+    return await admin.database().ref("approvedNumbers").once('value', (snapshot) => { })
         .then((snapshot) => {
             const data = snapshot.val()
             // console.log(data)
@@ -130,7 +128,7 @@ async function getNotificationGroup(recipients) {
             var tokenList = []
             //for each user
             for (const [userKey, userValue] of Object.entries(data)) {
-                if (recipients === undefined || recipients.includes(userKey)) {
+                if (firebaseIds === undefined || firebaseIds.includes(userKey)) {
                     //add each token
                     if (userValue.tokens != null) {
                         for (const [tokenKey, tokenValue] of Object.entries(userValue.tokens)) {
@@ -168,8 +166,8 @@ async function sendNotificationsToGroup(message, registrationTokens) {
     }
 }
 
-/**"You are schedule to play with {groupName}." */
-async function run_reminderNotificationsForAllGroups() {
+/**"You are scheduled to play with {groupName}." */
+async function run_scheduledToPlayReminderForAllGroups() {
     const today = new Date()
     let tomorrow = new Date()
     tomorrow.setDate(today.getDate() + 1)
@@ -192,10 +190,10 @@ async function run_reminderNotificationsForAllGroups() {
         await admin.database().ref(playersRef).once('value', async (snapshot) => {
             const data = snapshot.val();
             if (data == null) {
-                console.log("No players for this group/day");
+                console.log("No players for " + groupName + " on this day");
                 return;
             }
-            var phoneNumbers = [];
+            var firebaseIds = [];
             var count = 0;
             var limit = 4;
             for (const [userKey, userValue] of Object.entries(data)) {
@@ -203,15 +201,14 @@ async function run_reminderNotificationsForAllGroups() {
                 if (count == limit) break;
                 if (userValue.isComing != null) continue;
                 count++;
-                let cleanNumber = userValue.phoneNumber.toString().replace(/\D/g, '');
-                phoneNumbers.push(cleanNumber.toString());
+                firebaseIds.push(userValue.firebaseId);
             }
-            console.log(phoneNumbers);
-            if (phoneNumbers.length == 0) {
+            console.log("firebaseIds: " + firebaseIds);
+            if (firebaseIds.length == 0) {
                 console.log("No blank RSVPs for group " + key);
             } else {
-                console.log(phoneNumbers.length + " blank RSVPs");
-                await getNotificationGroup(phoneNumbers).then(async (registrationTokens) => {
+                console.log(firebaseIds.length + " blank RSVPs");
+                await getRegistrationTokensFromFirebaseIds(firebaseIds).then(async (registrationTokens) => {
                     const message = {
                         "notification": {
                             "title": "Player reminder",
@@ -238,15 +235,15 @@ async function run_procastinatorNotification() {
                 .then(async (snapshot) => {
                     const groupWeekSubmissions = snapshot.val()
                     if (groupWeekSubmissions == null) return;
-                    var registeredNumbers = []
+                    var registeredFirebaseIds = []
                     for (const [key, submission] of Object.entries(groupWeekSubmissions)) {
-                        registeredNumbers.push(submission.firebaseId)
+                        registeredFirebaseIds.push(submission.firebaseId)
                     }
 
                     await admin.database().ref("approvedNumbers").once('value', async (snapshot2) => {
 
                         const userData = snapshot2.val()
-                        //flatten users to list of phone numbers
+                        //flatten users to list of firebaseIds
                         var allUsersInGroup = []
                         for (const [userKey, userValue] of Object.entries(userData)) {
                             if (userValue.groups != null && userValue.groups.includes(groupId)) {
@@ -254,11 +251,11 @@ async function run_procastinatorNotification() {
                             }
                         }
 
-                        var procrastinators = allUsersInGroup.filter((user) => !registeredNumbers.includes(user.firebaseId));
+                        var procrastinators = allUsersInGroup.filter((user) => !registeredFirebaseIds.includes(user.firebaseId));
                         console.log("procrastinators in group " + groupId)
                         console.log(procrastinators)
-                        var numbersOnly = procrastinators.map((user) => user.firebaseId)
-                        await getNotificationGroup(numbersOnly).then(registrationTokens => {
+                        var firebaseIdsOnly = procrastinators.map((user) => user.firebaseId)
+                        await getRegistrationTokensFromFirebaseIds(firebaseIdsOnly).then(registrationTokens => {
                             const message = {
                                 "notification": {
                                     "title": "Sign up for next week",

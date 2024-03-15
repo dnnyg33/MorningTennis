@@ -50,7 +50,7 @@ function tennisSort(data) {
     let daysMap = {"Monday": 0, "Tuesday": 0, "Wednesday": 0, "Thursday": 0, "Friday": 0}
 
     sortedList.forEach(playerPreference => {
-        let person = uniqueData.find(x => x.phoneNumber == playerPreference.phoneNumber)
+        let person = uniqueData.find(x => x.firebaseId == playerPreference.firebaseId)
         let hasReachedMaxDays = person.maxDays == person.scheduledDays
         if (hasReachedMaxDays) {
             console.log("skipping " + person.name + " who is already scheduled for " + person.scheduledDays + " days")
@@ -89,9 +89,9 @@ function buildSortedObjectFull(day, item, choice) {
         hasSunpro = true
     }
     let shortenedName = index.shortenedName(item.name)
-    return { "day": day, "name": shortenedName + " (" + choice + ")", "phoneNumber": phoneNumber, "hasSunpro": hasSunpro }
+    return { "day": day, "name": shortenedName + " (" + choice + ")", "phoneNumber": phoneNumber, "hasSunpro": hasSunpro, "firebaseId": item.firebaseId }
 }
 function buildSortedObject(pair) {
     var name = pair.name
-    return { "name": name, "phoneNumber": pair.phoneNumber }
+    return { "name": name, "phoneNumber": pair.phoneNumber, "firebaseId": pair.firebaseId }
 }

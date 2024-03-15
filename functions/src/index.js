@@ -78,7 +78,7 @@ exports.logout = functions.https.onRequest((req, res) => {
 
 
 exports.testSendNotification = functions.https.onRequest(async (req, res) => {
-    notifications.run_procastinatorNotification()
+    notifications.run_scheduledToPlayReminderForAllGroups()
     res.end("Done")
 })
 
@@ -86,7 +86,7 @@ exports.testSendNotification = functions.https.onRequest(async (req, res) => {
 //A notification for an alternate who has been promoted to player due to an RSVP event or for a last minute change.
 exports.sendRSVPUpdateNotification = functions.https.onRequest((req, res) => {
     console.log("run_rsvpNotification:body " + JSON.stringify(req.body))
-    notifications.run_rsvpNotification(req.body.data, res)
+    notifications.run_announceNotComingNotification(req.body.data, res)
 })
 
 
@@ -94,21 +94,21 @@ exports.sendRSVPUpdateNotification = functions.https.onRequest((req, res) => {
 exports.scheduleReminderNotification = functions.pubsub.schedule('20 15 * * MON-THU')
     .timeZone('America/Denver')
     .onRun(async (context) => {
-        await notifications.run_reminderNotificationsForAllGroups()
+        await notifications.run_scheduledToPlayReminderForAllGroups()
     })
 
 //notification for players on Monday, sent out late Sunday night after schedule closes
 exports.scheduleReminderNotificationSunday = functions.pubsub.schedule('30 20 * * SUN')
     .timeZone('America/Denver')
     .onRun(async (context) => {
-        await notifications.run_reminderNotificationsForAllGroups()
+        await notifications.run_scheduledToPlayReminderForAllGroups()
     })
 
 //reminder that schedule is about to close
 exports.scheduleClosingNotification = functions.pubsub.schedule('00 19 * * SUN')
     .timeZone('America/Denver')
     .onRun((context) => {
-        notifications.run_scheduleNotification(null, "Schedule closing", "The schedule for this week is about to close. Please submit or make any changes before 8pm.")
+        notifications.run_signupStatusNotification(null, "Schedule closing", "The schedule for this week is about to close. Please submit or make any changes before 8pm.")
 
     });
 
@@ -129,7 +129,7 @@ exports.scheduleCloseScheduleCommand = functions.pubsub.schedule('05 20 * * SUN'
                 admin.database().ref("groups-v2").child(groupName).child("scheduleIsOpen").set(false)
             }
             //TODO when schedule timing is dynamic, this will need to be specific to each group so that users aren't blasted for groups they aren't in
-            notifications.run_scheduleNotification(null, "Schedule now closed", "View and RSVP for next week's schedule in the app.")
+            notifications.run_signupStatusNotification(null, "Schedule now closed", "View and RSVP for next week's schedule in the app.")
         });
     })
 
@@ -170,7 +170,7 @@ function run_openScheduleCommand() {
         const groupsData = snapshot.val();
         createNewEmptyWeek(groupsData);
         //TODO when schedule timing is dynamic, this will need to be specific to each group so that users aren't blasted for groups they aren't in
-        notifications.run_scheduleNotification(null, "Schedule now open", "You can now sign up for next week's schedule in the app.");
+        notifications.run_signupStatusNotification(null, "Schedule now open", "You can now sign up for next week's schedule in the app.");
     });
 
     function createNewEmptyWeek(groupsData) {
@@ -241,10 +241,10 @@ function removeDuplicates(data) {
     var uniquePlayers = []
     //iterate through data 
     for (const [key, item] of Object.entries(data)) {
-        let cleanNumber = item.firebaseId.toString().replace(/\D/g, '')
+        let cleanNumber = item.firebaseId
         if (firebaseId.includes(cleanNumber)) {
             console.log("firebaseIds include: " + cleanNumber)
-            uniquePlayers = uniquePlayers.filter(f => cleanNumber !== f.firebaseId.toString().replace(/\D/g, ''))
+            uniquePlayers = uniquePlayers.filter(f => cleanNumber !== f.firebaseId)
         }
         item.scheduledDays = 0
         firebaseId.push(cleanNumber)
