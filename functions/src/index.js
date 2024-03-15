@@ -78,7 +78,7 @@ exports.logout = functions.https.onRequest((req, res) => {
 
 
 exports.testSendNotification = functions.https.onRequest(async (req, res) => {
-    notifications.run_scheduledToPlayReminderForAllGroups()
+    run_openScheduleCommand()
     res.end("Done")
 })
 
@@ -177,13 +177,12 @@ function run_openScheduleCommand() {
         for (const [groupId, groupData] of Object.entries(groupsData)) {
             admin.database().ref("groups-v2").child(groupId).child("scheduleIsOpen").set(true);
             let weekStartDay = groupData.weekStartDay ?? "Monday";
-            let startDayInt = dayOfWeekAsInteger(weekStartDay);
+            let startDayInt = dayOfWeekAsInteger(weekStartDay);//5
             let now = new Date();
-            now.setDate(now.getDate() -8);
-            let diff = ((startDayInt + 7) - now.getDay()) % 7;
+            let diff = ((startDayInt + 7) - now.getDay()) % 7;//5
             let startDate = now.addDays(diff);
             let path = weekStartDay + fmt(startDate, "-M-D-YYYY");
-            console.log("path: " + path);
+            console.log("Creating empty week for " + groupData.name + " at " + path)
             admin.database().ref("incoming-v4").child(groupId).child(path).child("1").set({
                 "firebaseId": "weekStart",
             });

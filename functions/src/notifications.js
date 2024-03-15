@@ -119,7 +119,7 @@ function run_signupStatusNotification(res, title, body) {
 
 /**If recipients is null, sends to all users in approvedNumbers */
 async function getRegistrationTokensFromFirebaseIds(firebaseIds) {
-    console.log("preparing to send push to " + firebaseIds)
+    console.log("preparing to send push to " + (firebaseIds ?? "all users"))
     return await admin.database().ref("approvedNumbers").once('value', (snapshot) => { })
         .then((snapshot) => {
             const data = snapshot.val()
@@ -148,6 +148,8 @@ async function sendNotificationsToGroup(message, registrationTokens) {
         console.log(message)
         return;
     } else {
+        console.log("Sending message:")
+        console.log(message)
         await admin.messaging().sendMulticast(message)
             .then((response) => {
                 if (response.failureCount > 0) {
@@ -158,7 +160,7 @@ async function sendNotificationsToGroup(message, registrationTokens) {
                             failedTokens.push(registrationTokens[idx]);
                         }
                     });
-                    console.log('List of tokens that caused failures: ' + failedTokens);
+                    console.log('List of tokens that caused failures('+failedTokens.length+'): ' + failedTokens.join('\r\n'));
                 } else {
                     console.log("No errors sending messages")
                 }
