@@ -4,16 +4,9 @@ const admin = require("firebase-admin");
 const index = require('./index.js')
 
 async function runSort(incomingSubmissionsData, groupId, weekName) {
-    admin.database().ref('groups-v2').child(groupId).child("scheduleIsBuilding").set(true);
-
     const memberRankingsSnapshot = await admin.database().ref('member_rankings').child(groupId).get();
     const result = tennisSortBySkill(incomingSubmissionsData, memberRankingsSnapshot.val())
-    admin.database().ref("sorted-v4").child(groupId).child(weekName).set(result)
     admin.database().ref("sorted-v6").child(groupId).child("balanceSkill").child(weekName).set(result)
-    const v5Result = index.removeEmptyDays(result)
-    admin.database().ref("sorted-v5").child(groupId).child("balanceSkill").child(weekName).set(v5Result)
-    
-    admin.database().ref('groups-v2').child(groupId).child("scheduleIsBuilding").set(false);
     return result
 }
 
@@ -58,7 +51,7 @@ function tennisSortBySkill(data, playerInfoMap) {
         // console.log("item: " + JSON.stringify(item))
         const choices = playerSubmission.choices;
         if (choices == undefined) {
-            console.log("Skipping " + playerSubmission.name + " because they have no choices")
+            console.log(`Skipping ${item.firebaseId} because they have no choices`)
             continue
         }
         for (let index = 0; index < choices.length; index++) {
@@ -72,12 +65,8 @@ function tennisSortBySkill(data, playerInfoMap) {
     function addChoiceToDay(playerSubmission, key) {
         console.log("playerInfoMap: " + JSON.stringify(playerInfoMap))
         const ranking = playerInfoMap[playerSubmission.firebaseId]
-        let utr = 4
-        let goodwill = 1
-        if (ranking != null) {
-            utr = ranking.utr
-            goodwill = ranking.goodwill
-        }
+        let utr = ranking.utr ?? 4
+        let goodwill = ranking.goodwill ?? 1
         daysAvailable[key] = daysAvailable[key] ?? [];
         daysAvailable[key].push({ "name": playerSubmission.name, "phoneNumber": playerSubmission.phoneNumber, "firebaseId": playerSubmission.firebaseId, "maxDays": playerSubmission.maxDays, "utr": utr, "goodwill": goodwill });
     }
