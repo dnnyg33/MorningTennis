@@ -123,14 +123,7 @@ exports.scheduleProcrastinatorNotification = functions.pubsub.schedule('00 11 * 
 exports.scheduleCloseScheduleCommand = functions.pubsub.schedule('05 20 * * SUN')
     .timeZone('America/Denver')
     .onRun((context) => {
-        admin.database().ref("groups-v2").once('value', (snapshot) => {
-            const groupsData = snapshot.val();
-            for (const [groupName, submission] of Object.entries(groupsData)) {
-                admin.database().ref("groups-v2").child(groupName).child("scheduleIsOpen").set(false)
-            }
-            //TODO when schedule timing is dynamic, this will need to be specific to each group so that users aren't blasted for groups they aren't in
-            notifications.run_signupStatusNotification(null, "Schedule now closed", "View and RSVP for next week's schedule in the app.")
-        });
+        run_closeSignup();
     })
 
 //actually open schedule
@@ -165,6 +158,35 @@ exports.inviteUserToGroup = functions.https.onRequest((req, res) => {
 })
 
 
+async function run_closeSignup() {
+   await admin.database().ref("groups-v2").once('value', async (snapshot) => {
+        const groupsData = snapshot.val();
+        for (const [groupName, groupData] of Object.entries(groupsData)) {
+            admin.database().ref("groups-v2").child(groupName).child("scheduleIsOpen").set(false);
+            //clean up parenthesis on players who are scheduled
+            let path = createNewWeekDbPath(groupsData.weekStartDay ?? "Monday");
+            console.log("path: " + path)
+            await admin.database().ref("sorted-v6").child(groupData.id).child("balanceSkill").child(path).once('value', (snapshot) => {
+                let data = snapshot.val();
+                console.log("data: " + JSON.stringify(data))
+                for (const [day, dayData] of Object.entries(data)) {
+                    if (dayData.players == null) {
+                        continue;
+                    }
+                    dayData.players.forEach(player => {
+                        player.name = player.name.replace("(", "").replace(")", "");
+                    });
+                    console.log("dayData: " + JSON.stringify(dayData))
+                    admin.database().ref("sorted-v6").child(groupData.id).child("balanceSkill").child(path)
+                        .child(day).child("players").set(dayData.players);
+                }
+            });
+        }
+        //TODO when schedule timing is dynamic, this will need to be specific to each group so that users aren't blasted for groups they aren't in
+        notifications.run_signupStatusNotification(null, "Schedule now closed", "View and RSVP for next week's schedule in the app.");
+    });
+}
+
 function run_openScheduleCommand() {
     admin.database().ref("groups-v2").once('value', (snapshot) => {
         const groupsData = snapshot.val();
@@ -173,15 +195,11 @@ function run_openScheduleCommand() {
         notifications.run_signupStatusNotification(null, "Schedule now open", "You can now sign up for next week's schedule in the app.");
     });
 
-    function createNewEmptyWeek(groupsData) {
+function createNewEmptyWeek(groupsData) {
         for (const [groupId, groupData] of Object.entries(groupsData)) {
             admin.database().ref("groups-v2").child(groupId).child("scheduleIsOpen").set(true);
             let weekStartDay = groupData.weekStartDay ?? "Monday";
-            let startDayInt = dayOfWeekAsInteger(weekStartDay);//5
-            let now = new Date();
-            let diff = ((startDayInt + 7) - now.getDay()) % 7;//5
-            let startDate = now.addDays(diff);
-            let path = weekStartDay + fmt(startDate, "-M-D-YYYY");
+            let path = createNewWeekDbPath(weekStartDay);
             console.log("Creating empty week for " + groupData.name + " at " + path)
             admin.database().ref("incoming-v4").child(groupId).child(path).child("1").set({
                 "firebaseId": "weekStart",
@@ -198,6 +216,16 @@ function run_openScheduleCommand() {
 
 
 Date.prototype.addDays = function (d) { return new Date(this.valueOf() + 864E5 * d); };
+function createNewWeekDbPath(weekStartDay) {
+    let startDayInt = dayOfWeekAsInteger(weekStartDay); //5
+    let now = new Date();
+    // now.setDate(now.getDate()-5)//for testing only
+    let diff = ((startDayInt + 7) - now.getDay()) % 7; //5
+    let startDate = now.addDays(diff);
+    let path = weekStartDay + fmt(startDate, "-M-D-YYYY");
+    return path;
+}
+
 /**
 *
 * @method dayOfWeekAsInteger
