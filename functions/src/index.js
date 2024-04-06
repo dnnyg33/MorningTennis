@@ -77,16 +77,21 @@ exports.logout = functions.https.onRequest((req, res) => {
 
 
 
-exports.testSendNotification = functions.https.onRequest(async (req, res) => {
-    run_openScheduleCommand()
+exports.test = functions.https.onRequest(async (req, res) => {
+    await notifications.run_markNotComingNotification(req.body.data, res)
     res.end("Done")
 })
 
 
 //A notification for an alternate who has been promoted to player due to an RSVP event or for a last minute change.
-exports.sendRSVPUpdateNotification = functions.https.onRequest((req, res) => {
+exports.sendRSVPUpdateNotification = functions.https.onRequest(async (req, res)=> {
     console.log("run_rsvpNotification:body " + JSON.stringify(req.body))
-    notifications.run_announceNotComingNotification(req.body.data, res)
+    let firebaseIds = await notifications.run_markNotComingNotification(req.body.data, res)
+    if(firebaseIds != null){
+        res.status(200).send({"data": {"result": "success", "message": "notification sent to " + JSON.stringify(firebaseIds)}})
+    } else {
+        res.status(200).send({"data": {"result": "success", "message": "no firebaseIds found"}})
+    }
 })
 
 

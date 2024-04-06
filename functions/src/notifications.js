@@ -1,4 +1,4 @@
-module.exports.run_announceNotComingNotification = run_announceNotComingNotification;
+module.exports.run_markNotComingNotification = run_markNotComingNotification;
 module.exports.run_scheduledToPlayReminderForAllGroups = run_scheduledToPlayReminderForAllGroups;
 module.exports.run_procastinatorNotification = run_procastinatorNotification;
 module.exports.run_signupStatusNotification = run_signupStatusNotification;
@@ -6,7 +6,7 @@ module.exports.run_signupStatusNotification = run_signupStatusNotification;
 const admin = require("firebase-admin");
 const index = require("./index.js")
 
-async function run_announceNotComingNotification(data, res) {
+async function run_markNotComingNotification(data, res) {
     console.log("run_rsvpNotification:data " + JSON.stringify(data))
     if (data.position == null || data.position === "") {
         res.status(400).send("Please provide position")
@@ -31,12 +31,10 @@ async function run_announceNotComingNotification(data, res) {
     if (dayNumber < new Date().getDay()) {
         return;
     }
-    console.log(dayNumber)
-    console.log(today.getHours() + offsetHours)
     //if change is last minute, notify everyone
     if ((dayNumber - today.getDay() == 1 && today.getHours() + offsetHours >= 19) || dayNumber - today.getDay() == 0) {
 
-        admin.database().ref(weekPath).once('value', (snapshot) => {
+        return await admin.database().ref(weekPath).once('value', async (snapshot) => {
             const weekData = snapshot.val()
             console.log("weekData: " + JSON.stringify(weekData))
             const dayData = weekData[dayName].players
@@ -45,7 +43,7 @@ async function run_announceNotComingNotification(data, res) {
                 firebaseIds.push(userValue.firebaseId)
             }
             console.log(firebaseIds)
-            getRegistrationTokensFromFirebaseIds(firebaseIds).then(registrationTokens => {
+            await getRegistrationTokensFromFirebaseIds(firebaseIds).then(registrationTokens => {
                 const message = {
                     "notification": {
                         "title": "Last minute change!",
@@ -55,11 +53,11 @@ async function run_announceNotComingNotification(data, res) {
                 };
                 console.log(message.notification.body)
                 sendNotificationsToGroup(message, registrationTokens)
-                res.status(200)
             })
+            return firebaseIds
         })
     } else {
-        admin.database().ref(weekPath).once('value', (snapshot) => {
+        await admin.database().ref(weekPath).once('value', async (snapshot) => {
             const weekData = snapshot.val()
             const dayData = weekData[dayName].players
             var slots = 4;
@@ -84,9 +82,7 @@ async function run_announceNotComingNotification(data, res) {
                 }
 
             }
-            console.log("firebaseIds: " + firebaseIds)
-
-            getRegistrationTokensFromFirebaseIds(firebaseIds).then(registrationTokens => {
+            await getRegistrationTokensFromFirebaseIds(firebaseIds).then(registrationTokens => {
                 const message = {
                     "notification": {
                         "title": "You've been promoted to play (" + dayName + ")!",
@@ -95,8 +91,9 @@ async function run_announceNotComingNotification(data, res) {
                     "tokens": registrationTokens,
                 };
                 sendNotificationsToGroup(message, registrationTokens)
-                res.status(200)
             })
+            console.log("firebaseIds: " + firebaseIds)
+            return firebaseIds
         })
     }
 }
