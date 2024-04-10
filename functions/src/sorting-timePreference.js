@@ -24,7 +24,7 @@ function tennisSort(data) {
     for (const [key, item] of Object.entries(uniqueData)) {
         playerCount++
         if (item.choices == undefined) {
-            console.log("Skipping " + item.name + " because they have no choices")
+            console.log(`Skipping ${item.firebaseId} because they have no choices`)
             continue
         }
         for (let index = 0; index < item.choices.length; index++) {
@@ -83,13 +83,8 @@ function buildSortedObjectFull(day, item, choice) {
     if (item.phoneNumber != undefined) {
         phoneNumber = item.phoneNumber
     }
-    var hasSunpro = false
-    console.log("Item.hasSunpro " + item.sunPro)
-    if (item.sunPro === "Yes") {//replace with tab tracker
-        hasSunpro = true
-    }
     let shortenedName = index.shortenedName(item.name)
-    return { "day": day, "name": shortenedName + " (" + choice + ")", "phoneNumber": phoneNumber, "hasSunpro": hasSunpro, "firebaseId": item.firebaseId }
+    return { "day": day, "name": shortenedName + " (" + choice + ")", "phoneNumber": phoneNumber, "firebaseId": item.firebaseId }
 }
 function buildSortedObject(pair) {
     var name = pair.name

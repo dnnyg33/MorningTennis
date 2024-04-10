@@ -51,7 +51,7 @@ function tennisSortBySkill(data, playerInfoMap) {
         // console.log("item: " + JSON.stringify(item))
         const choices = playerSubmission.choices;
         if (choices == undefined) {
-            console.log(`Skipping ${item.firebaseId} because they have no choices`)
+            console.log(`Skipping ${playerSubmission.firebaseId} because they have no choices`)
             continue
         }
         for (let index = 0; index < choices.length; index++) {
@@ -63,8 +63,7 @@ function tennisSortBySkill(data, playerInfoMap) {
 
 
     function addChoiceToDay(playerSubmission, key) {
-        console.log("playerInfoMap: " + JSON.stringify(playerInfoMap))
-        const ranking = playerInfoMap[playerSubmission.firebaseId]
+        const ranking = playerInfoMap[playerSubmission.firebaseId] ?? {}
         let utr = ranking.utr ?? 4
         let goodwill = ranking.goodwill ?? 1
         daysAvailable[key] = daysAvailable[key] ?? [];

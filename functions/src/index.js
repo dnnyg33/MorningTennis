@@ -19,8 +19,12 @@ exports.sortWeekv5 = functions.database.ref("/incoming-v4/{groupId}/{day}").onWr
     const groupId = context.params.groupId;
     const weekName = context.params.day;
     const incomingSubmissionsData = snapshot.after.val()
+    admin.database().ref('groups-v2').child(groupId).child("scheduleIsBuilding").set(true);
+
     sortingTimePreference.runSort(incomingSubmissionsData, groupId, weekName);
     sortingBalanceSkill.runSort(incomingSubmissionsData, groupId, weekName)
+
+    admin.database().ref('groups-v2').child(groupId).child("scheduleIsBuilding").set(false);
 });
 
 exports.testFailure = functions.https.onRequest(async (req, res) => {
@@ -275,7 +279,7 @@ function removeDuplicates(data) {
     for (const [key, item] of Object.entries(data)) {
         let cleanNumber = item.firebaseId
         if (firebaseId.includes(cleanNumber)) {
-            console.log("firebaseIds include: " + cleanNumber)
+            console.log("duplicate entry for: " + cleanNumber)
             uniquePlayers = uniquePlayers.filter(f => cleanNumber !== f.firebaseId)
         }
         item.scheduledDays = 0
