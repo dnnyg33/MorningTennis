@@ -2,12 +2,14 @@ const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const sortingTimePreference = require("./sorting-timePreference.js")
 const sortingBalanceSkill = require("./sorting-balanceSkill.js")
+const sortingFullAvailability = require("./sorting-fullAvailability.js")
 const notifications = require("./notifications.js")
 const crud = require("./crud.js")
 module.exports.dayOfWeekAsInteger = dayOfWeekAsInteger;
 module.exports.shortenedName = shortenedName;
 module.exports.removeDuplicates = removeDuplicates;
 module.exports.removeEmptyDays = removeEmptyDays;
+module.exports.capitalizeFirstLetter = capitalizeFirstLetter;
 
 admin.initializeApp()
 
@@ -23,6 +25,7 @@ exports.sortWeekv5 = functions.database.ref("/incoming-v4/{groupId}/{day}").onWr
 
     sortingTimePreference.runSort(incomingSubmissionsData, groupId, weekName);
     sortingBalanceSkill.runSort(incomingSubmissionsData, groupId, weekName)
+    sortingFullAvailability.runSort(incomingSubmissionsData, groupId, weekName)
 
     admin.database().ref('groups-v2').child(groupId).child("scheduleIsBuilding").set(false);
 });
@@ -45,7 +48,8 @@ exports.testSort = functions.https.onRequest(async (req, res) => {
     console.log("result: " + JSON.stringify(result))
     const result2 = sortingTimePreference.runSort(incomingSubmissionsData, groupId, weekName);
     console.log("result2: " + JSON.stringify(result2))
-    res.send({ "balanceSkill": result, "timePreference": result2 })
+    const result3 = sortingFullAvailability.runSort(incomingSubmissionsData, groupId, weekName);
+    res.send({ "balanceSkill": result, "timePreference": result2, "fullAvailability": result3 })
 })
 
 exports.lateSubmissions = functions.database.ref("late-submissions/{groupId}/{weekName}/{day}/{pushKey}").onWrite((snapshot, context) => {
@@ -82,7 +86,21 @@ exports.logout = functions.https.onRequest((req, res) => {
 
 
 exports.test = functions.https.onRequest(async (req, res) => {
-    await notifications.run_markNotComingNotification(req.body.data, res)
+    admin.database().ref("groups-v2").once('value', (snapshot) => {
+        const groupsData = snapshot.val();
+        for (const [groupId, groupData] of Object.entries(groupsData)) {
+            console.log("groupId: " + groupId)
+            console.log("groupData: " + JSON.stringify(groupData))
+            let meetups = []
+            groupData.daysAvailable.forEach(day => {
+                meetups.push({ "dayOfWeek": day })
+            })
+            groupData.meetups2 = meetups
+
+            console.log("updated groupData: " + JSON.stringify(groupData))
+            admin.database().ref("groups-v2").child(groupId).set(groupData)
+        }
+    })
     res.end("Done")
 })
 
@@ -318,4 +336,8 @@ function fmt(date, format = 'YYYY-MM-DDThh:mm:ss') {
     };
 
     return Object.entries(map).reduce((prev, entry) => prev.replace(...entry), format);
+}
+
+function capitalizeFirstLetter(string) {
+    return string.charAt(0).toUpperCase() + string.slice(1);
 }
