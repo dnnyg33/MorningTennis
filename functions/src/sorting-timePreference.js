@@ -3,17 +3,17 @@ const admin = require("firebase-admin");
 module.exports.runSort = runSort;
 const index = require('./index.js')
 
-function runSort(original, groupId, weekName) {
-    var groups = tennisSort(original)
+async function runSort(original, groupId, weekName) {
+    var groups = await tennisSort(original, groupId)
     admin.database().ref("sorted-v3").child(groupId).child(weekName).set(groups)
     admin.database().ref("sorted-v6").child(groupId).child("timePreference").child(weekName).set(groups)
     const v5Result = index.removeEmptyDays(groups)
     admin.database().ref("sorted-v5").child(groupId).child("timePreference").child(weekName).set(v5Result)
-    
+
     return groups;
 }
 
-function tennisSort(data) {
+async function tennisSort(data, groupId) {
     console.log("tennisSort")
     console.log(JSON.stringify(data))
     let uniqueData = index.removeDuplicates(data)
@@ -28,7 +28,7 @@ function tennisSort(data) {
             continue
         }
         for (let index = 0; index < item.choices.length; index++) {
-            const choice = item.choices[index];
+            const choice = item.choices[index].trim();
             const listName = "sorted" + index
             const list = sortedListsMap[listName] ?? []
             const object = buildSortedObjectFull(choice, item, index + 1)
@@ -47,29 +47,33 @@ function tennisSort(data) {
         sortedList = sortedList.concat(list)
     }
 
-    let daysMap = {"Monday": 0, "Tuesday": 0, "Wednesday": 0, "Thursday": 0, "Friday": 0}
+    let daysMap = {}
+    return await index.buildDynamicDaysMap(groupId).then((map) => {
+        daysMap = map;
+        console.log("TP Days Map: " + JSON.stringify(daysMap))
 
-    sortedList.forEach(playerPreference => {
-        let person = uniqueData.find(x => x.firebaseId == playerPreference.firebaseId)
-        let hasReachedMaxDays = person.maxDays == person.scheduledDays
-        if (hasReachedMaxDays) {
-            console.log("skipping " + person.name + " who is already scheduled for " + person.scheduledDays + " days")
-            return
-        }
+        sortedList.forEach(playerPreference => {
+            let person = uniqueData.find(x => x.firebaseId == playerPreference.firebaseId)
+            let hasReachedMaxDays = person.maxDays == person.scheduledDays
+            if (hasReachedMaxDays) {
+                console.log("skipping " + person.name + " who is already scheduled for " + person.scheduledDays + " days")
+                return
+            }
 
-        let playerCountForDay = 8
-        let addedAsAlternate = false
-        let day = daysMap[playerPreference.day] ?? { "players": [] }
-        let players = day.players ?? []
-        players.push(buildSortedObject(playerPreference))
-        daysMap[playerPreference.day] = { "players": players }
+            let playerCountForDay = 8
+            let addedAsAlternate = false
+            let day = daysMap[playerPreference.day] ?? { "players": [] }
+            let players = day.players ?? []
+            players.push(buildSortedObject(playerPreference))
+            daysMap[playerPreference.day] = { "players": players }
 
-        if (!hasReachedMaxDays && !addedAsAlternate) {
-            person.scheduledDays++
-        }
+            if (!hasReachedMaxDays && !addedAsAlternate) {
+                person.scheduledDays++
+            }
+        })
+
+        return daysMap
     })
-
-    return daysMap
 
 }
 

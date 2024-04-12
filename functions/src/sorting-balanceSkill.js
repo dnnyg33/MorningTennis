@@ -5,7 +5,7 @@ const index = require('./index.js')
 
 async function runSort(incomingSubmissionsData, groupId, weekName) {
     const memberRankingsSnapshot = await admin.database().ref('member_rankings').child(groupId).get();
-    const result = tennisSortBySkill(incomingSubmissionsData, memberRankingsSnapshot.val())
+    const result = await tennisSortBySkill(incomingSubmissionsData, memberRankingsSnapshot.val(), groupId)
     admin.database().ref("sorted-v6").child(groupId).child("balanceSkill").child(weekName).set(result)
     return result
 }
@@ -38,7 +38,7 @@ function Combinations(arr, r) {
 }
 
 
-function tennisSortBySkill(data, playerInfoMap) {
+async function tennisSortBySkill(data, playerInfoMap, groupId) {
     console.log("playerInfoMap: " + JSON.stringify(playerInfoMap))
     console.log("data: " + JSON.stringify(data))
     let uniqueData = index.removeDuplicates(data)
@@ -55,11 +55,10 @@ function tennisSortBySkill(data, playerInfoMap) {
             continue
         }
         for (let index = 0; index < choices.length; index++) {
-            const choice = choices[index];
+            const choice = choices[index].trim();
             addChoiceToDay(playerSubmission, choice)
         }
     }
-    console.log("daysAvailable: " + JSON.stringify(daysAvailable))
 
 
     function addChoiceToDay(playerSubmission, key) {
@@ -70,27 +69,31 @@ function tennisSortBySkill(data, playerInfoMap) {
         daysAvailable[key].push({ "name": playerSubmission.name, "phoneNumber": playerSubmission.phoneNumber, "firebaseId": playerSubmission.firebaseId, "maxDays": playerSubmission.maxDays, "utr": utr, "goodwill": goodwill });
     }
 
-    //todo: lookup group's playable days
-    const weeklyMatches = {"Monday": 0, "Tuesday": 0, "Wednesday": 0, "Thursday": 0, "Friday": 0}
+    let weeklyMatches = {}
 
-    while (Object.keys(daysAvailable).length > 0) {
-        const topComboOfWeek = findBestMatches(daysAvailable);
-        if (topComboOfWeek == undefined) {
-            break;
+    return await index.buildDynamicDaysMap(groupId).then((map) => {
+        weeklyMatches = map;
+        console.log("Days Map: " + JSON.stringify(weeklyMatches))
+
+        while (Object.keys(daysAvailable).length > 0) {
+            const topComboOfWeek = findBestMatches(daysAvailable);
+            if (topComboOfWeek == undefined) {
+                break;
+            }
+            const key = Object.keys(topComboOfWeek)[0]
+            delete daysAvailable[key]
+            Object.assign(weeklyMatches, topComboOfWeek)
+            // topComboOfWeek[key].players.length
+            reduceGoodwillForChosenPlayers(topComboOfWeek, key);
         }
-        const key = Object.keys(topComboOfWeek)[0]
-        delete daysAvailable[key]
-        Object.assign(weeklyMatches, topComboOfWeek)
-        // topComboOfWeek[key].players.length
-        reduceGoodwillForChosenPlayers(topComboOfWeek, key);
-    }
 
 
-    for (const [key, item] of Object.entries(weeklyMatches)) {
-        console.log(key + "-" + getPlayerSummary(item.players)
-            + " \n " + JSON.stringify(item.stats))
-    }
-    return weeklyMatches;
+        for (const [key, item] of Object.entries(weeklyMatches)) {
+            console.log(key + "-" + getPlayerSummary(item.players)
+                + " \n " + JSON.stringify(item.stats))
+        }
+        return weeklyMatches;
+    })
 
 
     function reduceGoodwillForChosenPlayers(topComboOfWeek, key) {
