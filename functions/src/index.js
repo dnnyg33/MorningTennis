@@ -3,13 +3,14 @@ const admin = require("firebase-admin");
 const sortingTimePreference = require("./sorting-timePreference.js")
 const sortingBalanceSkill = require("./sorting-balanceSkill.js")
 const sortingFullAvailability = require("./sorting-fullAvailability.js")
+const sortingWhenIsGood = require("./sorting-whenisgood.js")
 const notifications = require("./notifications.js")
 const crud = require("./crud.js")
 module.exports.dayOfWeekAsInteger = dayOfWeekAsInteger;
 module.exports.shortenedName = shortenedName;
 module.exports.removeDuplicates = removeDuplicates;
 module.exports.removeEmptyDays = removeEmptyDays;
-module.exports.capitalizeFirstLetter = capitalizeFirstLetter;
+module.exports.buildDynamicDaysMap = buildDynamicDaysMap
 
 admin.initializeApp()
 
@@ -17,17 +18,18 @@ admin.initializeApp()
 // // https://firebase.google.com/docs/functions/write-firebase-functions
 //
 
-exports.sortWeekv5 = functions.database.ref("/incoming-v4/{groupId}/{day}").onWrite((snapshot, context) => {
+exports.sortWeekAfterAlgoChange = functions.database.ref("/groups-v2/{groupId}/sortingAlgorithm").onWrite(async (snapshot, context) => {
+    const groupId = context.params.groupId;
+    const weekName = createNewWeekDbPath("Monday");
+    const incomingSubmissionsData = (await admin.database().ref("incoming-v4").child(groupId).child(weekName).get()).val()
+    await runSort(groupId, incomingSubmissionsData, weekName);
+})
+
+exports.sortWeekv6 = functions.database.ref("/incoming-v4/{groupId}/{day}").onWrite(async (snapshot, context) => {
     const groupId = context.params.groupId;
     const weekName = context.params.day;
     const incomingSubmissionsData = snapshot.after.val()
-    admin.database().ref('groups-v2').child(groupId).child("scheduleIsBuilding").set(true);
-
-    sortingTimePreference.runSort(incomingSubmissionsData, groupId, weekName);
-    sortingBalanceSkill.runSort(incomingSubmissionsData, groupId, weekName)
-    sortingFullAvailability.runSort(incomingSubmissionsData, groupId, weekName)
-
-    admin.database().ref('groups-v2').child(groupId).child("scheduleIsBuilding").set(false);
+    await runSort(groupId, incomingSubmissionsData, weekName);
 });
 
 exports.testFailure = functions.https.onRequest(async (req, res) => {
@@ -35,7 +37,8 @@ exports.testFailure = functions.https.onRequest(async (req, res) => {
     res.status(500).send("testFailure")
 })
 exports.testSuccess = functions.https.onRequest(async (req, res) => {
-    console.log("testSuccess")
+
+    run_closeSignup();
     res.status(200).send("testSuccess")
 })
 
@@ -185,33 +188,64 @@ exports.inviteUserToGroup = functions.https.onRequest((req, res) => {
 })
 
 
+async function runSort(groupId, incomingSubmissionsData, weekName) {
+    admin.database().ref('groups-v2').child(groupId).child("scheduleIsBuilding").set(true);
+    await admin.database().ref('groups-v2').child(groupId).once('value', (snapshot) => {
+        const groupData = snapshot.val();
+        let algorithm = groupData.sortingAlgorithm;
+        console.log("running " + algorithm + " algorithm for group: " + groupId);
+        if (algorithm == "balanceSkill") {
+            sortingBalanceSkill.runSort(incomingSubmissionsData, groupId, weekName);
+        } else if (algorithm == "timePreference") {
+            sortingTimePreference.runSort(incomingSubmissionsData, groupId, weekName);
+        } else if (algorithm == "fullAvailability") {
+            sortingFullAvailability.runSort(incomingSubmissionsData, groupId, weekName);
+        } else if (algorithm == "whenIsGood") {
+            sortingWhenIsGood.runSort(incomingSubmissionsData, groupId, weekName);
+        } else {
+            console.log("No algorithm found for group " + groupId);
+        }
+        admin.database().ref('groups-v2').child(groupId).child("scheduleIsBuilding").set(false);
+    });
+}
+
 async function run_closeSignup() {
    await admin.database().ref("groups-v2").once('value', async (snapshot) => {
         const groupsData = snapshot.val();
         for (const [groupName, groupData] of Object.entries(groupsData)) {
+            console.log("closing schedule for " + groupName + ": " + groupData.name)
             admin.database().ref("groups-v2").child(groupName).child("scheduleIsOpen").set(false);
-            //clean up parenthesis on players who are scheduled
-            let path = createNewWeekDbPath(groupsData.weekStartDay ?? "Monday");
-            console.log("path: " + path)
-            await admin.database().ref("sorted-v6").child(groupData.id).child("balanceSkill").child(path).once('value', (snapshot) => {
-                let data = snapshot.val();
-                console.log("data: " + JSON.stringify(data))
-                for (const [day, dayData] of Object.entries(data)) {
-                    if (dayData.players == null) {
-                        continue;
-                    }
-                    dayData.players.forEach(player => {
-                        player.name = player.name.replace("(", "").replace(")", "");
-                    });
-                    console.log("dayData: " + JSON.stringify(dayData))
-                    admin.database().ref("sorted-v6").child(groupData.id).child("balanceSkill").child(path)
-                        .child(day).child("players").set(dayData.players);
-                }
-            });
+            if(groupData.sortingAlgorithm == "balanceSkill"){
+                //clean up parenthesis on players who are scheduled
+                await cleanupSortedData(groupsData, groupData);
+            }
         }
         //TODO when schedule timing is dynamic, this will need to be specific to each group so that users aren't blasted for groups they aren't in
         notifications.run_signupStatusNotification(null, "Schedule now closed", "View and RSVP for next week's schedule in the app.");
     });
+
+    async function cleanupSortedData(groupsData, groupData) {
+        let path = createNewWeekDbPath(groupsData.weekStartDay ?? "Monday");
+        await admin.database().ref("sorted-v6").child(groupData.id).child("balanceSkill").child(path).once('value', (snapshot) => {
+            let data = snapshot.val();
+            if (data == null) {
+                console.log("no data found for balanceSkill" + groupData.id + " " + path);
+                return;
+            }
+            console.log("data: " + JSON.stringify(data));
+            for (const [day, dayData] of Object.entries(data)) {
+                if (dayData.players == null) {
+                    continue;
+                }
+                dayData.players.forEach(player => {
+                    player.name = player.name.replace("(", "").replace(")", "");
+                });
+                console.log("dayData: " + JSON.stringify(dayData));
+                admin.database().ref("sorted-v6").child(groupData.id).child("balanceSkill").child(path)
+                    .child(day).child("players").set(dayData.players);
+            }
+        });
+    }
 }
 
 function run_openScheduleCommand() {
@@ -236,10 +270,58 @@ function createNewEmptyWeek(groupsData) {
     }
 }
 
+// function consolidateMeetups(meetupsListMap) {
+//     let weekOptions = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+//     weekOptions.forEach(day => {
+//         //if there are any meetups for this day, leave them alone.
+//         for (const [key, meetupsMap] of Object.entries(meetupsListMap)) {
+
+//         if (key.contains(day) && meetupsMap != 0) {
+//             continue
+//         } else {
+//             //else remove all empty meetups for this day and add new single day to consolidatedMeetups
+//             let consolidatedMeetups = {};
+//             if (meetupsMap != 0) {
+//                 consolidatedMeetups[key] = meetupsMap;
+//             }
+//         }
+//         //else remove all empty meetups for this day and add new single day to consolidatedMeetups
+//     let consolidatedMeetups = {};
+    
+//         if (meetupsMap != 0) {
+//             consolidatedMeetups[key] = meetupsMap;
+
+
+//         for (const [key, meetups] of Object.entries(meetupsMap)) {
+//             consolidatedMeetups = consolidatedMeetups.concat(meetups);
+//         }
+//     }
 
 
 
 
+function buildDynamicDaysMap(groupId) {
+    return admin.database().ref("groups-v2").child(groupId).child("meetups2").get().then((snapshot) => {
+        if (snapshot.exists()) {
+            daysMap = {};
+            let meetups = snapshot.val();
+            meetups.forEach(meetup => {
+                let key = ""
+                if (meetup.time == null) {
+                    key = capitalizeFirstLetter(meetup.dayOfWeek);
+                } else {
+                    key = capitalizeFirstLetter(meetup.dayOfWeek) + " " + meetup.time;
+                }
+                console.log("key: " + key + "key: " + key.trim() + "keyEnd")
+                daysMap[key.trim()] = 0;
+            });
+        } else {
+            console.log("No data available");
+            let daysMap = { "Monday": 0, "Tuesday": 0, "Wednesday": 0, "Thursday": 0, "Friday": 0 }
+        }
+        return daysMap;
+    });
+}
 
 
 Date.prototype.addDays = function (d) { return new Date(this.valueOf() + 864E5 * d); };
