@@ -140,29 +140,24 @@ async function getRegistrationTokensFromFirebaseIds(firebaseIds) {
 }
 
 async function sendNotificationsToGroup(message, registrationTokens) {
-    if (process.env.FUNCTIONS_EMULATOR == "true") {
-        console.log("Not sending notification in emulator")
-        console.log(message)
-        return;
-    } else {
-        console.log("Sending message:")
-        console.log(message)
-        await admin.messaging().sendMulticast(message)
-            .then((response) => {
-                if (response.failureCount > 0) {
-                    const failedTokens = [];
-                    response.responses.forEach((resp, idx) => {
+    let dryRun = process.env.FUNCTIONS_EMULATOR == "true"
+    console.log("Sending message (dryRun="+dryRun+"):")
+    console.log(message)
+    await admin.messaging().sendEachForMulticast(message = message, dryRun = dryRun)
+        .then((response) => {
+            if (response.failureCount > 0) {
+                const failedTokens = [];
+                response.responses.forEach((resp, idx) => {
 
-                        if (!resp.success) {
-                            failedTokens.push(registrationTokens[idx]);
-                        }
-                    });
-                    console.log('List of tokens that caused failures('+failedTokens.length+'): ' + failedTokens.join('\r\n'));
-                } else {
-                    console.log("No errors sending messages")
-                }
-            })
-    }
+                    if (!resp.success) {
+                        failedTokens.push(registrationTokens[idx]);
+                    }
+                });
+                console.log('List of tokens that caused failures('+failedTokens.length+'): ' + failedTokens.join('\r\n'));
+            } else {
+                console.log("No errors sending messages")
+            }
+        })
 }
 
 /**"You are scheduled to play with {groupName}." */

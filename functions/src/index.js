@@ -38,7 +38,7 @@ exports.testFailure = functions.https.onRequest(async (req, res) => {
 })
 exports.testSuccess = functions.https.onRequest(async (req, res) => {
 
-    run_closeSignup();
+    run_openScheduleCommand();
     res.status(200).send("testSuccess")
 })
 
