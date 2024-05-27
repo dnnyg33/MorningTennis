@@ -100,18 +100,20 @@ async function tennisSortBySkill(data, playerInfoMap, groupId) {
         let upperBound = topComboOfWeek[key].players.length < 4 ? topComboOfWeek[key].players.length : 4
         for (let index = 0; index < upperBound; index++) {
             const chosenPlayer = topComboOfWeek[key].players[index];
-            for (const [key, day] of Object.entries(daysAvailable)) {
+            for (const [key0, day] of Object.entries(daysAvailable)) {
                 var playerCount = 0;
-                for (const [key, player] of Object.entries(day)) {
+                //iterate through all players in day
+                for (let index = 0; index < day.length; index++) {
+                    const player = day[index];
                     if (player.firebaseId === chosenPlayer.firebaseId) {
                         player.maxDays = chosenPlayer.maxDays - 1;
                         if (player.maxDays == 0) {
-                            //todo remove this player from all days
-                            player.goodwill = 0;
+                            day.remove(index)
+                            console.log(chosenPlayer.name + " removed from all days")
                         } else {
                             player.goodwill = (player.goodwill) / 2;
+                            console.log(chosenPlayer.name + " goodwill reduced by half to " + player.goodwill);
                         }
-                        console.log(chosenPlayer.name + " goodwill reduced by half");
                     }
                 }
             }
@@ -199,3 +201,9 @@ function getPlayerSummary(element) {
     if (element.length < 4) return ""
     return element[0].name + "+" + element[3].name + " vs. " + element[1].name + "+" + element[2].name
 }
+
+Array.prototype.remove = function(from, to) {
+    var rest = this.slice((to || from) + 1 || this.length);
+    this.length = from < 0 ? this.length + from : from;
+    return this.push.apply(this, rest);
+  };
