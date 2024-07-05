@@ -177,7 +177,7 @@ function sortCombosByHighestQuality(combinations, allSignupsForDay) {
             const balance = outOfPossible(13, Math.abs(teamAutr - teamButr))
             const closeness = outOfPossible(15, calculateCloseness(sortedPlayers))
             const bias = (sortedPlayers[0].goodwill + sortedPlayers[1].goodwill + sortedPlayers[2].goodwill + sortedPlayers[3].goodwill) / 4
-            const quality = (balance + closeness) * bias
+            const quality = (balance + closeness*1.5) * bias
             matchesByQuality.push({ "players": sortedPlayers, stats: { "quality": quality, "closeness": closeness, "balance": balance, "bias": bias } })
         }
     }

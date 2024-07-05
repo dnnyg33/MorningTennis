@@ -1,5 +1,6 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
+const index = require('./index.js')
 module.exports.processLateSubmission = processLateSubmission;
 module.exports.createUser = createUser;
 module.exports.joinGroupRequest = joinGroupRequest;
@@ -39,7 +40,7 @@ function createUser(req, res) {
                     serverUser.tokens = Object.assign(serverUser.tokens ?? {}, body.tokens);
                 }
                 //create new human readable UTC date timestamp
-                serverUser.lastVisited = new Date().toString();
+                serverUser.lastVisited = new Date().toLocaleString('en-US', { timeZone: 'America/Denver' });
                 serverUser.firebaseId = body.firebaseId;
                 serverUser.appVersion = body.appVersion;
                 console.log("serverUser: " + JSON.stringify(serverUser))
@@ -440,7 +441,7 @@ function processLateSubmission(snapshot, writeLocation) {
             existingCount = data.length
         }
         const newPlayerRef = writeLocation + "/" + existingCount
-        const newPlayerObj = { "name": original.name, "phoneNumber": original.phoneNumber }//todo
+        const newPlayerObj = { "name": index.shortenedName(original.name), "phoneNumber": original.phoneNumber, "firebaseId": original.firebaseId }
         console.log("adding player " + JSON.stringify(newPlayerObj) + " to " + newPlayerRef)
         admin.database().ref(newPlayerRef).set(newPlayerObj)
     })
