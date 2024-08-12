@@ -192,6 +192,11 @@ async function runSort(groupId, incomingSubmissionsData, weekName) {
     admin.database().ref('groups-v2').child(groupId).child("scheduleIsBuilding").set(true);
     await admin.database().ref('groups-v2').child(groupId).once('value', (snapshot) => {
         const groupData = snapshot.val();
+        if (!groupData.scheduleIsOpen) {
+            console.log("schedule is closed for group: " + groupId);
+            admin.database().ref('groups-v2').child(groupId).child("scheduleIsBuilding").set(false);
+            return;
+        }
         let algorithm = groupData.sortingAlgorithm;
         console.log("running " + algorithm + " algorithm for group: " + groupId);
         if (algorithm == "balanceSkill") {
