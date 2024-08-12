@@ -174,12 +174,21 @@ function sortCombosByHighestQuality(combinations, allSignupsForDay) {
             sortedPlayers.push.apply(sortedPlayers, alternates)
             const teamAutr = sortedPlayers[0].utr + sortedPlayers[3].utr
             const teamButr = sortedPlayers[1].utr + sortedPlayers[2].utr
-            const balance = outOfPossible(13, Math.abs(teamAutr - teamButr))
-            const closeness = outOfPossible(15, calculateCloseness(sortedPlayers))
-            const bias = (sortedPlayers[0].goodwill + sortedPlayers[1].goodwill + sortedPlayers[2].goodwill + sortedPlayers[3].goodwill) / 4
-            const quality = (balance + closeness*1.5) * bias
-            matchesByQuality.push({ "players": sortedPlayers, stats: { "quality": quality, "closeness": closeness, "balance": balance, "bias": bias } })
-        }
+            const balance = outOfPossible(10, Math.abs(teamAutr - teamButr) * 10)
+            const closeness = outOfPossible(10, calculateCloseness(sortedPlayers) * 10)
+            const bias = ((sortedPlayers[0].goodwill + sortedPlayers[1].goodwill + sortedPlayers[2].goodwill + sortedPlayers[3].goodwill) / 4) * 10
+            const quality = (balance  + closeness + bias) / 3
+            const closenessWork = "((" + sortedPlayers[0].utr + "+" + sortedPlayers[1].utr + "+" + sortedPlayers[2].utr + "+" +
+                sortedPlayers[3].utr + ") / 4) - " + sortedPlayers[3].utr + " = " + calculateCloseness(sortedPlayers)
+            // const closenessWork = calculateCloseness(sortedPlayers)
+            const balanceWork = (teamAutr - teamButr)
+            // const balanceWOrk = "teamA-utr: " + teamAutr + " - teamB-utr:" + teamButr + " = " + (teamAutr - teamButr)
+            const qualityWork = "(b + c + bias * 10)/3 = (" + balance + "+" + closeness + "+" +(bias * 10) +")/3 = " + quality
+            matchesByQuality.push({
+                "players": sortedPlayers, stats:
+                    { "quality": quality, "qualityWork": qualityWork, "closeness": closeness, "closenessWork": closenessWork, "balance": balance, "balanceWork": balanceWork, "bias": bias }
+            })
+    }
     }
     return matchesByQuality.sortBy(i => i.stats.quality);
 
@@ -192,7 +201,7 @@ function sortCombosByHighestQuality(combinations, allSignupsForDay) {
         const outOf10 = possible - actual
         if (outOf10 <= 0) {
             return 1
-        } else return outOf10 / (possible / 10)
+        } else return outOf10
     }
 
 }
@@ -202,8 +211,8 @@ function getPlayerSummary(element) {
     return element[0].name + "+" + element[3].name + " vs. " + element[1].name + "+" + element[2].name
 }
 
-Array.prototype.remove = function(from, to) {
+Array.prototype.remove = function (from, to) {
     var rest = this.slice((to || from) + 1 || this.length);
     this.length = from < 0 ? this.length + from : from;
     return this.push.apply(this, rest);
-  };
+};
