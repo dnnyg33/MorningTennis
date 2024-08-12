@@ -41,7 +41,7 @@ function createUser(req, res) {
                 }
                 //create new human readable UTC date timestamp
                 serverUser.lastVisited = new Date().toLocaleString('en-US', { timeZone: 'America/Denver' });
-                serverUser.firebaseId = body.firebaseId;
+                serverUser.firebaseId = key;
                 serverUser.appVersion = body.appVersion;
                 console.log("serverUser: " + JSON.stringify(serverUser))
                 console.log("key: " + key)
