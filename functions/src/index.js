@@ -69,20 +69,20 @@ exports.logout = functions.https.onRequest((req, res) => {
     console.log("logout function called")
     console.log("req.body.data: " + JSON.stringify(req.body.data))
     let body = req.body.data
-    if(body.firebaseId == null){
+    if (body.firebaseId == null) {
         res.status(400).send("firebaseId is required")
         return
     }
-    if(body.deviceName == null){
+    if (body.deviceName == null) {
         res.status(400).send("deviceName is required")
         return
     }
     admin.database().ref("approvedNumbers").child(body.firebaseId).child("tokens").child(body.deviceName).remove().then(() => {
 
-        res.status(200).send({"data": {"result": "success", "message": "logout successful"}})
+        res.status(200).send({ "data": { "result": "success", "message": "logout successful" } })
     }).catch((error) => {
         console.log("error: " + error)
-        res.status(400).send({"data": {"result": "error", "message": error}})
+        res.status(400).send({ "data": { "result": "error", "message": error } })
     })
 })
 
@@ -109,13 +109,13 @@ exports.test = functions.https.onRequest(async (req, res) => {
 
 
 //A notification for an alternate who has been promoted to player due to an RSVP event or for a last minute change.
-exports.sendRSVPUpdateNotification = functions.https.onRequest(async (req, res)=> {
+exports.sendRSVPUpdateNotification = functions.https.onRequest(async (req, res) => {
     console.log("run_rsvpNotification:body " + JSON.stringify(req.body))
     let firebaseIds = await notifications.run_markNotComingNotification(req.body.data, res)
-    if(firebaseIds != null){
-        res.status(200).send({"data": {"result": "success", "message": "notification sent to " + JSON.stringify(firebaseIds)}})
+    if (firebaseIds != null) {
+        res.status(200).send({ "data": { "result": "success", "message": "notification sent to " + JSON.stringify(firebaseIds) } })
     } else {
-        res.status(200).send({"data": {"result": "success", "message": "no firebaseIds found"}})
+        res.status(200).send({ "data": { "result": "success", "message": "no firebaseIds found" } })
     }
 })
 
@@ -215,12 +215,12 @@ async function runSort(groupId, incomingSubmissionsData, weekName) {
 }
 
 async function run_closeSignup() {
-   await admin.database().ref("groups-v2").once('value', async (snapshot) => {
+    await admin.database().ref("groups-v2").once('value', async (snapshot) => {
         const groupsData = snapshot.val();
         for (const [groupName, groupData] of Object.entries(groupsData)) {
             console.log("closing schedule for " + groupName + ": " + groupData.name)
             admin.database().ref("groups-v2").child(groupName).child("scheduleIsOpen").set(false);
-            if(groupData.sortingAlgorithm == "balanceSkill"){
+            if (groupData.sortingAlgorithm == "balanceSkill") {
                 //clean up parenthesis on players who are scheduled
                 await cleanupSortedData(groupsData, groupData);
             }
@@ -261,7 +261,7 @@ function run_openScheduleCommand() {
         notifications.run_signupStatusNotification(null, "Schedule now open", "You can now sign up for next week's schedule in the app.");
     });
 
-function createNewEmptyWeek(groupsData) {
+    function createNewEmptyWeek(groupsData) {
         for (const [groupId, groupData] of Object.entries(groupsData)) {
             admin.database().ref("groups-v2").child(groupId).child("scheduleIsOpen").set(true);
             let weekStartDay = groupData.weekStartDay ?? "Monday";
@@ -292,7 +292,7 @@ function createNewEmptyWeek(groupsData) {
 //         }
 //         //else remove all empty meetups for this day and add new single day to consolidatedMeetups
 //     let consolidatedMeetups = {};
-    
+
 //         if (meetupsMap != 0) {
 //             consolidatedMeetups[key] = meetupsMap;
 
@@ -418,7 +418,7 @@ function fmt(date, format = 'YYYY-MM-DDThh:mm:ss') {
         hh: pad2(date.getHours()),
         mm: pad2(date.getMinutes()),
         ss: pad2(date.getSeconds()),
-        M: date.getMonth() +1,
+        M: date.getMonth() + 1,
         D: date.getDate(),
     };
 
