@@ -65,6 +65,14 @@ exports.lateSubmissions = functions.database.ref("late-submissions/{groupId}/{we
         crud.processLateSubmission(snapshot, writeLocationV4))
 })
 
+
+exports.createResultFromSetReport = functions.database.ref("sets").onWrite((snapshot, context) => {
+    //TODO create notification for players to validate
+    //TODO narrow onWrite to "sets/{setId}/validated"
+    createResultFromSet();
+})
+
+
 exports.logout = functions.https.onRequest((req, res) => {
     console.log("logout function called")
     console.log("req.body.data: " + JSON.stringify(req.body.data))
@@ -89,23 +97,15 @@ exports.logout = functions.https.onRequest((req, res) => {
 
 
 exports.test = functions.https.onRequest(async (req, res) => {
-    admin.database().ref("groups-v2").once('value', (snapshot) => {
-        const groupsData = snapshot.val();
-        for (const [groupId, groupData] of Object.entries(groupsData)) {
-            console.log("groupId: " + groupId)
-            console.log("groupData: " + JSON.stringify(groupData))
-            let meetups = []
-            groupData.daysAvailable.forEach(day => {
-                meetups.push({ "dayOfWeek": day })
-            })
-            groupData.meetups2 = meetups
-
-            console.log("updated groupData: " + JSON.stringify(groupData))
-            admin.database().ref("groups-v2").child(groupId).set(groupData)
-        }
-    })
-    res.end("Done")
+    await createResultFromSet();
+    res.end("Done");
 })
+//adhoc function to update UTRs
+exports.requestUTRUpdate = functions.https.onRequest(async (req, res) => {
+    await executeUTRUpdate();
+    return res.sendStatus(200);
+})
+
 
 
 //A notification for an alternate who has been promoted to player due to an RSVP event or for a last minute change.
@@ -119,6 +119,12 @@ exports.sendRSVPUpdateNotification = functions.https.onRequest(async (req, res) 
     }
 })
 
+//schedules updateUTR function to run at when schedule opens
+exports.scheduleUpdateUTR = functions.pubsub.schedule('5 8 * * FRI')
+    .timeZone('America/Denver')
+    .onRun(async (context) => {
+        await executeUTRUpdate();
+    })
 
 //notification each day for players
 exports.scheduleReminderNotification = functions.pubsub.schedule('20 15 * * MON-THU')
@@ -162,6 +168,169 @@ exports.scheduleOpenNotification = functions.pubsub.schedule('00 8 * * FRI')
     .onRun((context) => {
         run_openScheduleCommand();
     });
+
+
+calculateMatchRating = (match) => {
+    let victor = match.victor
+    // console.log("winnerUtr: " + match.winnerUtr)
+    // console.log("loserUtr: " + match.loserUtr)
+    let gameDifference = Math.abs(match.winningScore - match.losingScore)
+    // console.log("gameDifference: " + gameDifference)
+    // let utrDifference = Math.abs(match.winnerUtr  - match.loserUtr)
+    let playerUtr
+    let opponentUtr
+    if(victor){
+        playerUtr = match.winnerUtr
+        opponentUtr = match.loserUtr
+    } else {
+        playerUtr = match.loserUtr
+        opponentUtr = match.winnerUtr
+    }
+    let utrDifference = playerUtr - opponentUtr
+    let baseWinnerRating = .9
+    let gameFactor = .1
+    let utrFactor = .05
+    let baseLoserRating = 1.1
+    let matchRating
+    if(victor){
+        matchRating = baseWinnerRating + ((gameDifference * gameFactor) - (utrDifference * utrFactor))
+        // console.log("matchRating for victory: " + matchRating + " game difference: " + gameDifference + " utr difference: " + utrDifference)
+    } else {
+        matchRating = baseLoserRating - ((gameDifference * gameFactor) + (utrDifference * utrFactor))
+        // console.log("matchRating for loss: " + matchRating + " game difference: " + gameDifference + " utr difference: " + utrDifference)
+    }
+    return matchRating
+   
+}
+
+calculateMatchWeight = (match) => {
+    let baseWeight = 10
+    let baseDecayRate = .03
+    let date1 = new Date()
+    let date2 = new Date(match.date)
+    let utc1 =  Date.UTC(date1.getFullYear(), date1.getMonth(), date1.getDate())
+    let utc2 =  Date.UTC(date2.getFullYear(), date2.getMonth(), date2.getDate())
+    let daysSinceMatch = Math.ceil(Math.abs(utc1 - utc2) / (1000 * 60 * 60 * 24))
+    // console.log("daysSinceMatch: " + daysSinceMatch)
+    let decayRate = Math.max(0, Math.min(baseDecayRate, 1));
+    let weight = baseWeight * Math.pow(1 - decayRate, daysSinceMatch)
+    return weight 
+}
+
+
+async function executeUTRUpdate() {
+    return await admin.database().ref('member_rankings').once('value', async (snapshot) => {
+        const groups = snapshot.val();
+        for (const [groupId, group] of Object.entries(groups)) {
+            console.log("Calculating UTRs for group " + groupId);
+            for (const [firebaseId, ranking] of Object.entries(group)) {
+                console.log("Ranking " + firebaseId + " " + JSON.stringify(ranking));
+                let newUtr = await calculateUTR(firebaseId, ranking.utr);
+                if (newUtr == -1) {
+                    continue;
+                }
+                admin.database().ref('member_rankings').child(groupId).child(firebaseId).child("utr").set(newUtr)
+            }
+        }
+    });
+}
+
+async function createResultFromSet() {
+    await admin.database().ref("member_rankings").once('value', async (snapshot) => {
+        const rankings = snapshot.val();
+        await admin.database().ref("sets").once('value', (snapshot) => {
+            const groupsData = snapshot.val();
+            let results = {};
+            for (const [groupId, groupData] of Object.entries(groupsData)) {
+                console.log("groupId: " + groupId);
+                let groupRankings = rankings[groupId];
+                if (groupRankings == null) {
+                    console.log("no rankings found for group " + groupId);
+                    continue;
+                }
+                for (const [weekName, weekData] of Object.entries(groupData)) {
+                    console.log("weekName: " + weekName);
+                    for (const [setId, setData] of Object.entries(weekData)) {
+                        console.log("setId: " + setId);
+
+                        if (groupRankings[setData.winners[0]] == null || groupRankings[setData.winners[1]] == null || groupRankings[setData.losers[0]] == null || groupRankings[setData.losers[1]] == null) {
+                            console.log("rankings: " + JSON.stringify(rankings[groupId][setData.winners[0]]) + " for " + JSON.stringify(setData.winners[0]));
+                            console.log("rankings: " + JSON.stringify(rankings[groupId][setData.winners[1]]) + " for " + JSON.stringify(setData.winners[1]));
+                            console.log("rankings: " + JSON.stringify(rankings[groupId][setData.losers[0]]) + " for " + JSON.stringify(setData.losers[0]));
+                            console.log("rankings: " + JSON.stringify(rankings[groupId][setData.losers[1]]) + " for " + JSON.stringify(setData.losers[1]));
+                            console.log("null ranking found");
+                            continue;
+                        }
+                        let winnerUtr = (rankings[groupId][setData.winners[0]].utr + rankings[groupId][setData.winners[1]].utr).toFixed(2);
+                        let loserUtr = (rankings[groupId][setData.losers[0]].utr + rankings[groupId][setData.losers[1]].utr).toFixed(2);
+
+                        setData.losers.forEach(loser => {
+                            let result = {
+                                "setId": setId, "date": setData.timeSubmitted,
+                                "winningScore": setData.winningScore, "losingScore": setData.losingScore,
+                                victor: false, "winnerUtr": winnerUtr, "loserUtr": loserUtr, "group": groupId
+                            };
+
+                            let resultsForUser = results[loser] ?? [];
+                            resultsForUser.push(result);
+                            results[loser] = resultsForUser;
+                        });
+                        setData.winners.forEach(winner => {
+                            let result = {
+                                "setId": setId, "date": setData.timeSubmitted,
+                                "winningScore": setData.winningScore, "losingScore": setData.losingScore,
+                                victor: true, "winnerUtr": winnerUtr, "loserUtr": loserUtr, "group": groupId
+                            };
+                            let resultsForUser = results[winner] ?? [];
+                            resultsForUser.push(result);
+                            results[winner] = resultsForUser;
+                        });
+                    }
+                }
+            }
+            for (const [firebaseId, result] of Object.entries(results)) {
+                result.sort((a, b) => new Date(b.date) - new Date(a.date));
+            }
+            admin.database().ref("results").set(results);
+        });
+    });
+}
+
+async function calculateUTR(firebaseId, utr) {
+    let matchHistorySnapshot = await admin.database().ref('results').child(firebaseId).once('value', async (snapshot) => {
+        const data = snapshot.val()
+        if (data == null) {
+            console.log("No match history found for " + firebaseId)
+            return null
+        }
+        console.log("Calculating UTR for " + firebaseId)
+        //return up to 30 results for this user
+        //filter by group?
+        return data.slice(0, 30)
+    })
+    let matchHistory = matchHistorySnapshot.val()
+    if (matchHistory == null || matchHistory.length == 0) {
+        return -1
+    }
+    let totalRating = 0
+    let totalWeight = 0
+    matchHistory.forEach(match => {
+        let matchRating = calculateMatchRating(match)
+        // console.log("matchRating: " + matchRating)
+        let matchWeight = calculateMatchWeight(match)
+        // console.log("matchWeight: " + matchWeight)
+        totalRating += matchRating * matchWeight
+        totalWeight += matchWeight
+
+    })
+    let utrMultiplier = totalRating / totalWeight
+    console.log("utrMultiplier: " + utrMultiplier)
+    console.log("previous utr: " + utr)
+    console.log("new utr: " + utr * utrMultiplier)
+    return utr * utrMultiplier
+}
+
+
 
 
 ///CRUD
