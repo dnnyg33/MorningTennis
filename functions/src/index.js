@@ -66,10 +66,10 @@ exports.lateSubmissions = functions.database.ref("late-submissions/{groupId}/{we
 })
 
 
-exports.createResultFromSetReport = functions.database.ref("sets").onWrite((snapshot, context) => {
+exports.createResultFromSetReport = functions.database.ref("sets/{groupId}/{weekName}/{pushKey}").onWrite((snapshot, context) => {
     //TODO create notification for players to validate
     //TODO narrow onWrite to "sets/{setId}/validated"
-    createResultFromSet();
+    createResultFromSet(snapshot.after.key, snapshot.after.val(), context.params.groupId);
 })
 
 
@@ -97,7 +97,7 @@ exports.logout = functions.https.onRequest((req, res) => {
 
 
 exports.test = functions.https.onRequest(async (req, res) => {
-    await createResultFromSet();
+    // await createResultFromSet();
     res.end("Done");
 })
 //adhoc function to update UTRs
@@ -230,66 +230,44 @@ async function executeUTRUpdate() {
     });
 }
 
-async function createResultFromSet() {
+async function createResultFromSet(setId, setData, groupId) {
+    console.log("createResultFromSet: " + JSON.stringify(setData));
     await admin.database().ref("member_rankings").once('value', async (snapshot) => {
         const rankings = snapshot.val();
-        await admin.database().ref("sets").once('value', (snapshot) => {
-            const groupsData = snapshot.val();
-            let results = {};
-            for (const [groupId, groupData] of Object.entries(groupsData)) {
-                console.log("groupId: " + groupId);
-                let groupRankings = rankings[groupId];
-                if (groupRankings == null) {
-                    console.log("no rankings found for group " + groupId);
-                    continue;
-                }
-                for (const [weekName, weekData] of Object.entries(groupData)) {
-                    console.log("weekName: " + weekName);
-                    //todo start function here
-                    for (const [setId, setData] of Object.entries(weekData)) {
-                        console.log("setId: " + setId);
+        if (rankings[groupId][setData.winners[0]] == null || rankings[groupId][setData.winners[1]] == null || 
+            rankings[groupId][setData.losers[0]] == null || rankings[groupId][setData.losers[1]] == null) {
+            console.log("rankings: " + JSON.stringify(rankings[groupId][setData.winners[0]]) + " for " + JSON.stringify(setData.winners[0]));
+            console.log("rankings: " + JSON.stringify(rankings[groupId][setData.winners[1]]) + " for " + JSON.stringify(setData.winners[1]));
+            console.log("rankings: " + JSON.stringify(rankings[groupId][setData.losers[0]]) + " for " + JSON.stringify(setData.losers[0]));
+            console.log("rankings: " + JSON.stringify(rankings[groupId][setData.losers[1]]) + " for " + JSON.stringify(setData.losers[1]));
+            console.log("null ranking found");
+            return;
+        }
+        let winnerUtr = (rankings[groupId][setData.winners[0]].utr + rankings[groupId][setData.winners[1]].utr).toFixed(2);
+        let loserUtr = (rankings[groupId][setData.losers[0]].utr + rankings[groupId][setData.losers[1]].utr).toFixed(2);
 
-                        if (groupRankings[setData.winners[0]] == null || groupRankings[setData.winners[1]] == null || groupRankings[setData.losers[0]] == null || groupRankings[setData.losers[1]] == null) {
-                            console.log("rankings: " + JSON.stringify(rankings[groupId][setData.winners[0]]) + " for " + JSON.stringify(setData.winners[0]));
-                            console.log("rankings: " + JSON.stringify(rankings[groupId][setData.winners[1]]) + " for " + JSON.stringify(setData.winners[1]));
-                            console.log("rankings: " + JSON.stringify(rankings[groupId][setData.losers[0]]) + " for " + JSON.stringify(setData.losers[0]));
-                            console.log("rankings: " + JSON.stringify(rankings[groupId][setData.losers[1]]) + " for " + JSON.stringify(setData.losers[1]));
-                            console.log("null ranking found");
-                            continue;
-                        }
-                        let winnerUtr = (rankings[groupId][setData.winners[0]].utr + rankings[groupId][setData.winners[1]].utr).toFixed(2);
-                        let loserUtr = (rankings[groupId][setData.losers[0]].utr + rankings[groupId][setData.losers[1]].utr).toFixed(2);
+        setData.losers.forEach(loser => {
+            let result = {
+                "setId": setId, "date": setData.timeSubmitted,
+                "winningScore": setData.winningScore, "losingScore": setData.losingScore,
+                victor: false, "winnerUtr": winnerUtr, "loserUtr": loserUtr, "group": groupId,
+                "matchRating": calculateMatchRating(false, setData.winningScore, setData.losingScore, winnerUtr, loserUtr),
+            };
+            admin.database().ref("results").child(loser).push(result);
 
-                        setData.losers.forEach(loser => {
-                            let result = {
-                                "setId": setId, "date": setData.timeSubmitted,
-                                "winningScore": setData.winningScore, "losingScore": setData.losingScore,
-                                victor: false, "winnerUtr": winnerUtr, "loserUtr": loserUtr, "group": groupId,
-                                "matchRating": calculateMatchRating(false, setData.winningScore, setData.losingScore, winnerUtr, loserUtr),
-                            };
+            // let resultsForUser = results[loser] ?? [];
+            // resultsForUser.push(result);
+            // results[loser] = resultsForUser;
+        });
+        setData.winners.forEach(winner => {
+            let result = {
+                "setId": setId, "date": setData.timeSubmitted,
+                "winningScore": setData.winningScore, "losingScore": setData.losingScore,
+                victor: true, "winnerUtr": winnerUtr, "loserUtr": loserUtr, "group": groupId,
+                "matchRating": calculateMatchRating(true, setData.winningScore, setData.losingScore, winnerUtr, loserUtr),
+            };
+            admin.database().ref("results").child(winner).push(result);
 
-                            let resultsForUser = results[loser] ?? [];
-                            resultsForUser.push(result);
-                            results[loser] = resultsForUser;
-                        });
-                        setData.winners.forEach(winner => {
-                            let result = {
-                                "setId": setId, "date": setData.timeSubmitted,
-                                "winningScore": setData.winningScore, "losingScore": setData.losingScore,
-                                victor: true, "winnerUtr": winnerUtr, "loserUtr": loserUtr, "group": groupId,
-                                "matchRating": calculateMatchRating(true, setData.winningScore, setData.losingScore, winnerUtr, loserUtr),
-                            };
-                            let resultsForUser = results[winner] ?? [];
-                            resultsForUser.push(result);
-                            results[winner] = resultsForUser;
-                        });
-                    }
-                }
-            }
-            for (const [firebaseId, result] of Object.entries(results)) {
-                result.sort((a, b) => new Date(b.date) - new Date(a.date));
-            }
-            admin.database().ref("results").set(results);
         });
     });
 }
