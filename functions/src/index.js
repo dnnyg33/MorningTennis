@@ -280,9 +280,10 @@ async function calculateUTR(firebaseId, utr) {
             return null
         }
         console.log("Calculating UTR for " + firebaseId)
-        //return up to 30 results for this user
         //filter by group?
-        return data.slice(0, 30)
+        //return up to 30 results for this user sorted by most recent
+        return Object.values(data).sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 30)
+        
     })
     let matchHistory = matchHistorySnapshot.val()
     if (matchHistory == null || matchHistory.length == 0) {
@@ -290,7 +291,7 @@ async function calculateUTR(firebaseId, utr) {
     }
     let totalRating = 0
     let totalWeight = 0
-    matchHistory.forEach(match => {
+    for (const [key, match] of Object.entries(matchHistory)) {
         // let matchRating = calculateMatchRating(match.victor, match.winningScore, match.losingScore, match.winnerUtr, match.loserUtr)
         // console.log("matchRating: " + matchRating)
         let matchWeight = calculateMatchWeight(match)
@@ -298,7 +299,7 @@ async function calculateUTR(firebaseId, utr) {
         totalRating += match.matchRating * matchWeight
         totalWeight += matchWeight
 
-    })
+    }
     let utrMultiplier = totalRating / totalWeight
     console.log("utrMultiplier: " + utrMultiplier)
     console.log("previous utr: " + utr)
