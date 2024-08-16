@@ -254,10 +254,6 @@ async function createResultFromSet(setId, setData, groupId) {
                 "matchRating": calculateMatchRating(false, setData.winningScore, setData.losingScore, winnerUtr, loserUtr),
             };
             admin.database().ref("results").child(loser).push(result);
-
-            // let resultsForUser = results[loser] ?? [];
-            // resultsForUser.push(result);
-            // results[loser] = resultsForUser;
         });
         setData.winners.forEach(winner => {
             let result = {
@@ -302,8 +298,9 @@ async function calculateUTR(firebaseId, utr) {
     }
     let utrMultiplier = totalRating / totalWeight
     console.log("utrMultiplier: " + utrMultiplier)
-    console.log("previous utr: " + utr)
-    let newUtr = (utr * utrMultiplier).toFixed(2)
+    let previousUtr = utr ?? 4.0
+    console.log("previous utr: " + previousUtr)
+    let newUtr = parseFloat((previousUtr * utrMultiplier).toFixed(2))
     console.log("new utr: " + newUtr)
     return newUtr
 }
