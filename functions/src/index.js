@@ -170,21 +170,16 @@ exports.scheduleOpenNotification = functions.pubsub.schedule('00 8 * * FRI')
     });
 
 
-calculateMatchRating = (match) => {
-    let victor = match.victor
-    // console.log("winnerUtr: " + match.winnerUtr)
-    // console.log("loserUtr: " + match.loserUtr)
-    let gameDifference = Math.abs(match.winningScore - match.losingScore)
-    // console.log("gameDifference: " + gameDifference)
-    // let utrDifference = Math.abs(match.winnerUtr  - match.loserUtr)
+calculateMatchRating = (victor, winningScore, losingScore, winnerUtr, loserUtr) => {
+    let gameDifference = Math.abs(winningScore - losingScore)
     let playerUtr
     let opponentUtr
     if(victor){
-        playerUtr = match.winnerUtr
-        opponentUtr = match.loserUtr
+        playerUtr = winnerUtr
+        opponentUtr = loserUtr
     } else {
-        playerUtr = match.loserUtr
-        opponentUtr = match.winnerUtr
+        playerUtr = loserUtr
+        opponentUtr = winnerUtr
     }
     let utrDifference = playerUtr - opponentUtr
     let baseWinnerRating = .9
@@ -250,6 +245,7 @@ async function createResultFromSet() {
                 }
                 for (const [weekName, weekData] of Object.entries(groupData)) {
                     console.log("weekName: " + weekName);
+                    //todo start function here
                     for (const [setId, setData] of Object.entries(weekData)) {
                         console.log("setId: " + setId);
 
@@ -268,7 +264,8 @@ async function createResultFromSet() {
                             let result = {
                                 "setId": setId, "date": setData.timeSubmitted,
                                 "winningScore": setData.winningScore, "losingScore": setData.losingScore,
-                                victor: false, "winnerUtr": winnerUtr, "loserUtr": loserUtr, "group": groupId
+                                victor: false, "winnerUtr": winnerUtr, "loserUtr": loserUtr, "group": groupId,
+                                "matchRating": calculateMatchRating(false, setData.winningScore, setData.losingScore, winnerUtr, loserUtr),
                             };
 
                             let resultsForUser = results[loser] ?? [];
@@ -279,7 +276,8 @@ async function createResultFromSet() {
                             let result = {
                                 "setId": setId, "date": setData.timeSubmitted,
                                 "winningScore": setData.winningScore, "losingScore": setData.losingScore,
-                                victor: true, "winnerUtr": winnerUtr, "loserUtr": loserUtr, "group": groupId
+                                victor: true, "winnerUtr": winnerUtr, "loserUtr": loserUtr, "group": groupId,
+                                "matchRating": calculateMatchRating(true, setData.winningScore, setData.losingScore, winnerUtr, loserUtr),
                             };
                             let resultsForUser = results[winner] ?? [];
                             resultsForUser.push(result);
@@ -315,19 +313,20 @@ async function calculateUTR(firebaseId, utr) {
     let totalRating = 0
     let totalWeight = 0
     matchHistory.forEach(match => {
-        let matchRating = calculateMatchRating(match)
+        // let matchRating = calculateMatchRating(match.victor, match.winningScore, match.losingScore, match.winnerUtr, match.loserUtr)
         // console.log("matchRating: " + matchRating)
         let matchWeight = calculateMatchWeight(match)
         // console.log("matchWeight: " + matchWeight)
-        totalRating += matchRating * matchWeight
+        totalRating += match.matchRating * matchWeight
         totalWeight += matchWeight
 
     })
     let utrMultiplier = totalRating / totalWeight
     console.log("utrMultiplier: " + utrMultiplier)
     console.log("previous utr: " + utr)
-    console.log("new utr: " + utr * utrMultiplier)
-    return utr * utrMultiplier
+    let newUtr = (utr * utrMultiplier).toFixed(2)
+    console.log("new utr: " + newUtr)
+    return newUtr
 }
 
 
