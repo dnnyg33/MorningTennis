@@ -98,6 +98,27 @@ exports.logout = functions.https.onRequest((req, res) => {
 
 exports.test = functions.https.onRequest(async (req, res) => {
     // await createResultFromSet();
+    await admin.database().ref('member_rankings').once('value', async (snapshot) => {
+        const groups = snapshot.val();
+        for (const [groupId, group] of Object.entries(groups)) {
+            console.log("Fixing UTRs for group " + groupId);
+            for (const [firebaseId, ranking] of Object.entries(group)) {
+                console.log("Ranking " + firebaseId + " " + JSON.stringify(ranking));
+                if (ranking.utr == undefined || ranking.utr == null) {
+                    continue;
+                }
+                let newUtr;
+                if(ranking.utr == "NaN"){
+                    newUtr = 4.0
+                } else {
+                    newUtr = parseFloat(ranking.utr)
+                }
+                console.log("newUtr: " + newUtr)
+                
+                admin.database().ref('member_rankings').child(groupId).child(firebaseId).child("utr").set(newUtr)
+            }
+        }
+    });
     res.end("Done");
 })
 //adhoc function to update UTRs
@@ -300,7 +321,7 @@ async function calculateUTR(firebaseId, utr) {
     console.log("utrMultiplier: " + utrMultiplier)
     let previousUtr = utr ?? 4.0
     console.log("previous utr: " + previousUtr)
-    let newUtr = parseFloat((previousUtr * utrMultiplier).toFixed(2))
+    let newUtr = (previousUtr * utrMultiplier).toFixed(2)
     console.log("new utr: " + newUtr)
     return newUtr
 }
