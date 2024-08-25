@@ -4,7 +4,7 @@
   },
   "hosting": {
     "site": "morning-tennis",
-    "public": "web",
+    "public": "web/site",
     "ignore": [
       "firebase.json",
       "**/.*",

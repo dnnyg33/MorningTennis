@@ -319,9 +319,9 @@ async function calculateUTR(firebaseId, utr) {
     }
     let utrMultiplier = totalRating / totalWeight
     console.log("utrMultiplier: " + utrMultiplier)
-    let previousUtr = utr ?? 4.0
+    let previousUtr = 4.0
     console.log("previous utr: " + previousUtr)
-    let newUtr = (previousUtr * utrMultiplier).toFixed(2)
+    let newUtr = parseFloat((previousUtr * utrMultiplier).toFixed(2))
     console.log("new utr: " + newUtr)
     return newUtr
 }
