@@ -37,16 +37,31 @@ function Combinations(arr, r) {
     }).concat(Combinations(arr, r));
 }
 
+async function getFirebaseIdForPhoneNumber(phoneNumber) {
+    const snapshot = await admin.database().ref('approvedNumbers').get();
+    const allUsers = snapshot.val()
+    for (const [key, value] of Object.entries(allUsers)) {
+        if (value.phoneNumber == phoneNumber) {
+            return key
+        }
+    }
+}
 
-async function tennisSortBySkill(data, playerInfoMap, groupId) {
-    console.log("playerInfoMap: " + JSON.stringify(playerInfoMap))
-    console.log("data: " + JSON.stringify(data))
-    let uniqueData = index.removeDuplicates(data)
+
+async function tennisSortBySkill(incomingSubmissionsData, playerRankingInfoMap, groupId) {
+    // console.log("playerRankingInfoMap: " + JSON.stringify(playerRankingInfoMap))
+    console.log("incomingSubmissionsData: " + JSON.stringify(incomingSubmissionsData))
+    let uniqueData = index.removeDuplicates(incomingSubmissionsData)
     console.log("Unique Data: " + JSON.stringify(uniqueData))
     //make a map for each day with key as name of day
     const daysAvailable = {}
 
     for (const [key, playerSubmission] of Object.entries(uniqueData)) {
+        if(playerSubmission.firebaseId.length == 10){
+            let firebaseId = await getFirebaseIdForPhoneNumber(playerSubmission.phoneNumber)
+            console.log("firebaseId was phoneNumber: " + playerSubmission.phoneNumber + " but is now: " + firebaseId)
+            playerSubmission.firebaseId = firebaseId
+        }
         //for each nonnull choice, add item to map using choice as key
         // console.log("item: " + JSON.stringify(item))
         const choices = playerSubmission.choices;
@@ -62,7 +77,7 @@ async function tennisSortBySkill(data, playerInfoMap, groupId) {
 
 
     function addChoiceToDay(playerSubmission, key) {
-        const ranking = playerInfoMap[playerSubmission.firebaseId] ?? {}
+        const ranking = playerRankingInfoMap[playerSubmission.firebaseId] ?? {}
         let utr = ranking.utr ?? 4
         let goodwill = ranking.goodwill ?? 1
         daysAvailable[key] = daysAvailable[key] ?? [];
