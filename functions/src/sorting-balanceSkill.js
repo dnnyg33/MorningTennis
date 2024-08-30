@@ -59,8 +59,10 @@ async function tennisSortBySkill(incomingSubmissionsData, playerRankingInfoMap, 
     for (const [key, playerSubmission] of Object.entries(uniqueData)) {
         if(playerSubmission.firebaseId.length == 10){
             let firebaseId = await getFirebaseIdForPhoneNumber(playerSubmission.phoneNumber)
-            console.log("firebaseId was phoneNumber: " + playerSubmission.phoneNumber + " but is now: " + firebaseId)
             playerSubmission.firebaseId = firebaseId
+            console.log("firebaseId was phoneNumber: " + playerSubmission.phoneNumber +
+                 " but is now: " + playerSubmission.firebaseId)
+            
         }
         //for each nonnull choice, add item to map using choice as key
         // console.log("item: " + JSON.stringify(item))
@@ -161,6 +163,9 @@ async function tennisSortBySkill(incomingSubmissionsData, playerRankingInfoMap, 
         var topComboOfWeekKey;
         for (const [key, dayCombos] of allCombos) {
             const topComboPerDay = dayCombos[0];
+            if (topComboPerDay == undefined) {
+                continue;
+            }
             if (topComboOfWeek == undefined) {
                 topComboOfWeek = { [key]: topComboPerDay }
                 topComboOfWeekKey = key
@@ -180,6 +185,11 @@ function sortCombosByHighestQuality(combinations, allSignupsForDay) {
     var matchesByQuality = [];
     for (let index = 0; index < combinations.length; index++) {
         const players = combinations[index];
+        //if there are no players for a day, then we don't want a stats object
+        if(players.length == 0) {
+            console.log("No players for this day")
+            continue;
+        }
         //if less than 4 players for a day, then there are no combos to sort
         if (players.length < 4) {
             matchesByQuality.push({ "players": players, stats: { "quality": -1, "closeness": 0, "balance": 0, "bias": 0 } })
