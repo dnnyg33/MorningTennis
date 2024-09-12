@@ -11,6 +11,7 @@ module.exports.shortenedName = shortenedName;
 module.exports.removeDuplicates = removeDuplicates;
 module.exports.removeEmptyDays = removeEmptyDays;
 module.exports.buildDynamicDaysMap = buildDynamicDaysMap
+module.exports.createResultFromSet = createResultFromSet
 
 admin.initializeApp()
 
@@ -38,7 +39,6 @@ exports.testFailure = functions.https.onRequest(async (req, res) => {
 })
 exports.testSuccess = functions.https.onRequest(async (req, res) => {
 
-    run_openScheduleCommand();
     res.status(200).send("testSuccess")
 })
 
@@ -66,10 +66,24 @@ exports.lateSubmissions = functions.database.ref("late-submissions/{groupId}/{we
 })
 
 
-exports.createResultFromSetReport = functions.database.ref("sets/{groupId}/{weekName}/{pushKey}").onWrite((snapshot, context) => {
+exports.onSetReported = functions.database.ref("sets-v2/{groupId}/{pushKey}").onWrite(async (snapshot, context) => {
     //TODO create notification for players to validate
-    //TODO narrow onWrite to "sets/{setId}/validated"
-    createResultFromSet(snapshot.after.key, snapshot.after.val(), context.params.groupId);
+    const groupId = context.params.groupId;
+    const setData = snapshot.after.val();
+    const isVerified = setData.verified;
+    if (!isVerified) {
+        console.log("New unverified set reported")
+        const players = setData.winners.concat(setData.losers);
+        await notifications.getRegistrationTokensFromFirebaseIds(players).then((tokens) => {
+            notifications.sendNotificationsToGroup({
+                "title": "New set reported",
+                "body": "A new set has been reported. Please verify the results.",
+                "data": { "setData": setData }
+            }, tokens)
+        })
+    } else {
+        console.log("Set already verified")
+    }
 })
 
 
@@ -94,6 +108,28 @@ exports.logout = functions.https.onRequest((req, res) => {
     })
 })
 
+exports.test2 = functions.https.onRequest(async (req, res) => {
+    let groupId = "test"
+    let data = await admin.database().ref("sets").child(groupId).get()
+    let weeks = data.val()
+    for (const [weekName, week] of Object.entries(weeks)) {
+        for(const [pushId, set] of Object.entries(week)){
+            if(set.verified == null){
+                set.verified = true
+            }
+            set.weekName = weekName
+            if(set.winningScore == 8) {
+                if (set.losingScore >= 5) {
+                    set.winningScore = 7
+                } else {
+                    set.winningScore = 6
+                }
+            }
+            admin.database().ref("sets-v2").child(groupId).child(pushId).set(set)
+        }
+    }
+    res.send("done")
+})
 
 
 exports.test = functions.https.onRequest(async (req, res) => {
@@ -277,13 +313,15 @@ async function createResultFromSet(setId, setData, groupId) {
             admin.database().ref("results").child(loser).push(result);
         });
         setData.winners.forEach(winner => {
+            const newDate = new Date(setData.weekName);
+            newDate.setDate(newDate.getDate() + ((dayOfWeekAsInteger(setData.dayName) +6) % 7));
             let result = {
-                "setId": setId, "date": setData.timeSubmitted,
+                "setId": setId, "date": fmt(newDate),
                 "winningScore": setData.winningScore, "losingScore": setData.losingScore,
                 victor: true, "winnerUtr": winnerUtr, "loserUtr": loserUtr, "group": groupId,
                 "matchRating": calculateMatchRating(true, setData.winningScore, setData.losingScore, winnerUtr, loserUtr),
             };
-            admin.database().ref("results").child(winner).push(result);
+            admin.database().ref("results-v2").child(winner).push(result);
 
         });
     });
@@ -334,13 +372,18 @@ module.exports.createUser = functions.https.onRequest((req, res) => {
     crud.createUser(req, res)
 })
 exports.joinGroupRequest = functions.https.onRequest((req, res) => {
+    console.log("Join group request")
     crud.joinGroupRequest(req, res)
 })
 exports.toggleAdmin = functions.https.onRequest((req, res) => {
     crud.toggleAdmin(req, res)
 })
 exports.approveJoinRequest = functions.https.onRequest((req, res) => {
+    console.log("Approve join request")
     crud.approveJoinRequest(req, res)
+})
+exports.approveSetRequest = functions.https.onRequest((req, res) => {
+    crud.approveSetRequest(req, res)
 })
 exports.modifyGroupMember = functions.https.onRequest((req, res) => {
     crud.modifyGroupMember(req, res)

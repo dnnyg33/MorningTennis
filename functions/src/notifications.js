@@ -2,6 +2,8 @@ module.exports.run_markNotComingNotification = run_markNotComingNotification;
 module.exports.run_scheduledToPlayReminderForAllGroups = run_scheduledToPlayReminderForAllGroups;
 module.exports.run_procastinatorNotification = run_procastinatorNotification;
 module.exports.run_signupStatusNotification = run_signupStatusNotification;
+module.exports.sendNotificationsToGroup = sendNotificationsToGroup;
+module.exports.getRegistrationTokensFromFirebaseIds = getRegistrationTokensFromFirebaseIds;
 
 const admin = require("firebase-admin");
 const index = require("./index.js")

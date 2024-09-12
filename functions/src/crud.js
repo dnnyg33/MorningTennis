@@ -1,11 +1,13 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const index = require('./index.js')
+const notifications = require('./notifications.js')
 module.exports.processLateSubmission = processLateSubmission;
 module.exports.createUser = createUser;
 module.exports.joinGroupRequest = joinGroupRequest;
 module.exports.toggleAdmin = toggleAdmin;
 module.exports.approveJoinRequest = approveJoinRequest;
+module.exports.approveSetRequest = approveSetRequest;
 module.exports.modifyGroupMember = modifyGroupMember;
 module.exports.inviteUserToGroup = inviteUserToGroup;
 module.exports.deleteAccount = deleteAccount;
@@ -91,9 +93,9 @@ function createUser(req, res) {
  * @param {*} req 
  * @param {*} res 
  */
-function joinGroupRequest(req, res) {
+async function joinGroupRequest(req, res) {
     const body = req.body.data;
-    admin.database().ref("groups-v2").child(body.groupId).once('value', (snapshot) => {
+    await admin.database().ref("groups-v2").child(body.groupId).once('value', async (snapshot) => {
         const group = snapshot.val();
         if (group == null) {
             res.status(400).send({ "data": { "result": "failure", "reason": "group not found" } })
@@ -102,14 +104,15 @@ function joinGroupRequest(req, res) {
         if (group.visibility == "public") {
             //append groupId to user's list of groups
             addGroupToUser();
-        } else if (group.visibility == "private") {
+        } else if (group.visibility == "private" || group.visibility == "unlisted") {//unlisted is just for testing.
             const request = {
-                "userId": body.userId, "status": "pending", "dateInitiated": new Date().getTime(), "groupId" : body.groupId
+                "userId": body.userId, "status": "pending", "dateInitiated": new Date().getTime(), "groupId": body.groupId
             }
 
             //find any existing, pending and delete
-            admin.database().ref("joinRequests").child(body.groupId).once('value', (snapshot) => {
-                const allRequests = snapshot.val();
+            await admin.database().ref("joinRequests").child(body.groupId).once('value', async (snapshot) => {
+                const allRequests = snapshot.val() ?? {};
+                //delete any existing so we don't have duplicates
                 for (const [key, request] of Object.entries(allRequests)) {
                     if (request.userId == body.userId && request.status == "pending") {
                         admin.database().ref("joinRequests").child(body.groupId).child(key).remove()
@@ -117,12 +120,16 @@ function joinGroupRequest(req, res) {
                 }
                 //add new request
                 admin.database().ref("joinRequests").child(body.groupId).push(request)
-                //todo notify admins
-            });
+                console.log("notifying admins...")
+                // notify admins
+                let adminIds = Object.values(group.admins)
+                console.log("adminIds: " + JSON.stringify(adminIds))
+                const message = { "notification": { "title": "New join request", "body": "A new user has requested to join " + group.name + ". Tap to view the request." } };
 
-            res.send({ "data": { "result": "pending" } })
-        } else if (group.visibility == "unlisted") {
-            //TODO How can this happen?
+                await notifications.sendNotificationsToGroup(message, await notifications.getRegistrationTokensFromFirebaseIds(adminIds))
+            }).then(() => {
+                res.send({ "data": { "result": "pending" } })
+            })
         }
     }).catch((error) => { console.error(error); res.send(500, { "data": { "result": "failure", "reason": error } }); });
 
@@ -135,11 +142,11 @@ function joinGroupRequest(req, res) {
             if (groups.includes(body.groupId)) {
                 res.send({ "data": { "result": "failure", "reason": "already in group" } });
             } else {
-                 //create member_ranking for this user
-                 admin.database().ref("member_rankings").child(body.groupId).child(body.userId).set({ "utr": 4, "goodwill": 1 })
+                //create member_ranking for this user
+                admin.database().ref("member_rankings").child(body.groupId).child(body.userId).set({ "utr": 4, "goodwill": 1 })
 
                 groups.push(body.groupId);
-                admin.database().ref("approvedNumbers").child(body.userId).child("groups").update(groups);
+                admin.database().ref("approvedNumbers").child(body.userId).child("groups").set(groups);
                 res.send({ "data": { "result": "success" } });
             }
         });
@@ -180,6 +187,103 @@ function toggleAdmin(req, res) {
         admin.database().ref("groups-v2").child(body.groupId).child("admins").set(group.admins)
         res.send({ "data": { "result": "success" } })
     });
+}
+
+async function approveSetRequest(req, res) {
+    const body = req.body.data;
+    const groupId = body.groupId;
+    const setId = body.setId;
+    const userId = body.userId;
+    const approve = body.approve;
+    const setData = await admin.database().ref("sets-v2").child(groupId).child(setId).once('value').then((snapshot) => { return snapshot.val() });
+    console.log("setData: " + JSON.stringify(setData))
+    var isVerified = false;
+    var adminRequest = false;
+    if (approve == null || groupId == null || setId == null || userId == null) {
+        res.sendStatus(400)
+        return;
+    }
+    await admin.database().ref("groups-v2").child(body.groupId).child("admins").once('value', (snapshot) => {
+        const admins = snapshot.val()
+        console.log("admins: " + JSON.stringify(admins))
+        //admins can approve sets
+        if (Object.values(admins).includes(userId)) {
+            console.log("request user is admin")
+            adminRequest = true
+        }
+        if (setData.verified == true) {
+            console.log("set already verified")
+            res.sendStatus(200)
+            return;
+        }
+        if (adminRequest && approve) {
+            console.log("admin approves")
+            isVerified = true
+        } else {
+            console.log("checking if user can approve")
+            if (setData.submittedBy == userId) {
+                console.log("cannot approve own set")
+                res.status(401)
+            } else if (setData.winners.includes(setData.submittedBy)) {
+                //a loser must approve this set
+                console.log("winner submitted")
+                if (setData.winners.includes(userId)) {
+                    console.log("Cannot approve set submitted by teammate")
+                    res.status(401)
+                }
+                else if (!setData.losers.includes(userId)) {
+                    console.log("Not part of the set")
+                    res.status(401)
+                } else if (setData.losers.includes(userId)) {
+                    if (!approve) {
+                        console.log("Not approved")
+                        res.status(201)
+                    } else {
+                        console.log("loser approves")
+                        isVerified = true
+                    }
+                }
+            } else if (setData.losers.includes(setData.submittedBy)) {
+                //a winner must approve this set
+                console.log("loser submitted")
+                if (setData.losers.includes(userId)) {
+                    console.log("Cannot approve set submitted by teammate")
+                    res.status(401)
+                }
+                else if (!setData.winners.includes(userId)) {
+                    console.log("Not part of the set")
+                    res.status(401)
+                } else if (setData.winners.includes(userId)) {
+                    if (!approve) {
+                        console.log("Not approved")
+                        res.status(201)
+                    } else {
+                        console.log("winner approves")
+                        isVerified = true
+                    }
+                }
+            } else if(!setData.winners.includes(userId) && !setData.losers.includes(userId)){
+                console.log("Not part of set")
+                res.status(401)
+            } else {
+                console.log("non player, (possibly admin) reported set")
+                if(setData.winners.concat(setData.losers).includes(userId)){
+                    console.log("verifier is player")
+                    isVerified = approve
+                }
+            }
+        }
+    });
+    console.log("verified: " + isVerified)
+    //create new result
+    if (isVerified) {
+        setData.verified = true
+        admin.database().ref("sets-v2").child(groupId).child(setId).child("verified").set(true)
+        await index.createResultFromSet(setId, setData, groupId);
+        res.sendStatus(200)
+    } else {
+        res.end()
+    }
 }
 
 function approveJoinRequest(req, res) {
@@ -232,7 +336,7 @@ function approveJoinRequest(req, res) {
                         "token": user.tokens[0],
                     };
                     getNotificationGroup([user.userId]).then(registrationTokens => {
-                        sendNotificationsToGroup(message, registrationTokens)
+                        notifications.sendNotificationsToGroup(message, registrationTokens)
                     })
                 })
 
@@ -301,7 +405,7 @@ function inviteUserToGroup(req, res) {
                     createMemberRanking(key);
                     return;
                 }
-            }       
+            }
             if (!foundUser) {
                 var newUser = { "group": body.groupId, "adminId": body.adminId, "dateInvited": new Date().getTime(), "publicId": body.userPublicId, "providedName": body.providedName }
                 let pushKey = admin.database().ref("invitedUsers").child(body.userPublicId).push()
