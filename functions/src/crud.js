@@ -191,8 +191,9 @@ function toggleAdmin(req, res) {
 
 async function approveSetRequest(req, res) {
     const body = req.body.data;
+    console.log("body: " + JSON.stringify(body))
     const groupId = body.groupId;
-    const setId = body.setId;
+    const setId = body.pushId;
     const userId = body.userId;
     const approve = body.approve;
     const setData = await admin.database().ref("sets-v2").child(groupId).child(setId).once('value').then((snapshot) => { return snapshot.val() });
@@ -204,10 +205,10 @@ async function approveSetRequest(req, res) {
         return;
     }
     await admin.database().ref("groups-v2").child(body.groupId).child("admins").once('value', (snapshot) => {
-        const admins = snapshot.val()
+        const admins = Object.values(snapshot.val())
         console.log("admins: " + JSON.stringify(admins))
         //admins can approve sets
-        if (Object.values(admins).includes(userId)) {
+        if (admins.includes(userId)) {
             console.log("request user is admin")
             adminRequest = true
         }
@@ -288,7 +289,7 @@ async function approveSetRequest(req, res) {
 
 function approveJoinRequest(req, res) {
     const body = req.body.data;
-    admin.database().ref("joinRequests").child(body.groupId).child(body.requestId).once('value', (snapshot) => {
+    admin.database().ref("joinRequests").child(body.groupId).child(body.pushId).once('value', (snapshot) => {
         const request = snapshot.val()
         if (request == null) {
             res.send({ "data": { "result": "failure", "reason": "joinRequest not found" } })
@@ -306,7 +307,7 @@ function approveJoinRequest(req, res) {
 
                 //change status of request to approved
                 request.status = "approved"
-                admin.database().ref("joinRequests").child(body.groupId).child(body.requestId).update(request)
+                admin.database().ref("joinRequests").child(body.groupId).child(body.pushId).update(request)
 
                 //append groupId to user's list of groups
                 admin.database().ref("approvedNumbers").child(body.userId).child('groups').once('value', (snapshotGroups) => {

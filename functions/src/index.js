@@ -38,7 +38,7 @@ exports.testFailure = functions.https.onRequest(async (req, res) => {
     res.status(500).send("testFailure")
 })
 exports.testSuccess = functions.https.onRequest(async (req, res) => {
-
+    console.log(req)
     res.status(200).send("testSuccess")
 })
 
