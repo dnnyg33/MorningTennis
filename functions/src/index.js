@@ -70,7 +70,7 @@ exports.onSetReported = functions.database.ref("sets-v2/{groupId}/{pushKey}").on
     //TODO create notification for players to validate
     const groupId = context.params.groupId;
     const setData = snapshot.after.val();
-    const isVerified = setData.verified;
+    const isVerified = setData.verification?.isVerified ?? false;
     if (!isVerified) {
         console.log("New unverified set reported")
         const players = setData.winners.concat(setData.losers);
@@ -109,15 +109,16 @@ exports.logout = functions.https.onRequest((req, res) => {
 })
 
 exports.test2 = functions.https.onRequest(async (req, res) => {
-    let groupId = "test"
+    const groupId = req.query["groupId"];
     let data = await admin.database().ref("sets").child(groupId).get()
     let weeks = data.val()
     for (const [weekName, week] of Object.entries(weeks)) {
         for(const [pushId, set] of Object.entries(week)){
-            if(set.verified == null){
-                set.verified = true
+            if(set.verification == null){
+                set.verification = {"isVerified": true, "verifiedBy": "admin", "dateVerified": new Date().getTime()} 
             }
             set.weekName = weekName
+            set.timestamp = new Date().getTime()
             if(set.winningScore == 8) {
                 if (set.losingScore >= 5) {
                     set.winningScore = 7
@@ -305,12 +306,13 @@ async function createResultFromSet(setId, setData, groupId) {
 
         setData.losers.forEach(loser => {
             let result = {
-                "setId": setId, "date": setData.timeSubmitted,
+                "setId": setId, "date": setData.timestamp,
                 "winningScore": setData.winningScore, "losingScore": setData.losingScore,
                 victor: false, "winnerUtr": winnerUtr, "loserUtr": loserUtr, "group": groupId,
                 "matchRating": calculateMatchRating(false, setData.winningScore, setData.losingScore, winnerUtr, loserUtr),
             };
-            admin.database().ref("results").child(loser).push(result);
+            admin.database().ref("results-v2").child(loser).push(result);
+            console.log("loser result: " + JSON.stringify(result));
         });
         setData.winners.forEach(winner => {
             const newDate = new Date(setData.weekName);
@@ -322,7 +324,7 @@ async function createResultFromSet(setId, setData, groupId) {
                 "matchRating": calculateMatchRating(true, setData.winningScore, setData.losingScore, winnerUtr, loserUtr),
             };
             admin.database().ref("results-v2").child(winner).push(result);
-
+            console.log("winner result: " + JSON.stringify(result));
         });
     });
 }
@@ -383,6 +385,7 @@ exports.approveJoinRequest = functions.https.onRequest((req, res) => {
     crud.approveJoinRequest(req, res)
 })
 exports.approveSetRequest = functions.https.onRequest((req, res) => {
+    console.log("Approve set request")
     crud.approveSetRequest(req, res)
 })
 exports.modifyGroupMember = functions.https.onRequest((req, res) => {

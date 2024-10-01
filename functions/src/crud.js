@@ -190,101 +190,91 @@ function toggleAdmin(req, res) {
 }
 
 async function approveSetRequest(req, res) {
-    const body = req.body.data;
-    console.log("body: " + JSON.stringify(body))
-    const groupId = body.groupId;
-    const setId = body.pushId;
-    const userId = body.userId;
-    const approve = body.approve;
+    console.log("req.body: " + JSON.stringify(req.body))
+    const data = req.body.data;
+    console.log("data: " + JSON.stringify(data))
+    const groupId = data.groupId;
+    const setId = data.pushId;
+    const userId = data.userId;
+    const approve = data.approve;
     const setData = await admin.database().ref("sets-v2").child(groupId).child(setId).once('value').then((snapshot) => { return snapshot.val() });
     console.log("setData: " + JSON.stringify(setData))
-    var isVerified = false;
-    var adminRequest = false;
+    var isAuthorized = false;
     if (approve == null || groupId == null || setId == null || userId == null) {
         res.sendStatus(400)
         return;
     }
-    await admin.database().ref("groups-v2").child(body.groupId).child("admins").once('value', (snapshot) => {
+    if (setData.verification != null && setData.verification.isVerified == true) {
+        res.send({ "data": { "message": "set already verified" } })
+        return;
+    } else if (setData.contestation != null && setData.contestation.isContested == true) {
+        res.send({ "data": { "message": "set is contested", "contestedBy": setData.contestation.contestedBy } })
+        return;
+    }
+    await admin.database().ref("groups-v2").child(data.groupId).child("admins").once('value', (snapshot) => {
+        //admins are always authorized
         const admins = Object.values(snapshot.val())
         console.log("admins: " + JSON.stringify(admins))
-        //admins can approve sets
         if (admins.includes(userId)) {
             console.log("request user is admin")
-            adminRequest = true
-        }
-        if (setData.verified == true) {
-            console.log("set already verified")
-            res.sendStatus(200)
-            return;
-        }
-        if (adminRequest && approve) {
-            console.log("admin approves")
-            isVerified = true
+            isAuthorized = true
         } else {
             console.log("checking if user can approve")
             if (setData.submittedBy == userId) {
-                console.log("cannot approve own set")
-                res.status(401)
+                res.status(401).send({ "data": { "message": "cannot approve own set" } })
+                return
             } else if (setData.winners.includes(setData.submittedBy)) {
                 //a loser must approve this set
                 console.log("winner submitted")
                 if (setData.winners.includes(userId)) {
-                    console.log("Cannot approve set submitted by teammate")
-                    res.status(401)
+                    res.status(401).send({ "data": { "message": "cannot approve set submitted by teammate" } })
+                    return
                 }
                 else if (!setData.losers.includes(userId)) {
-                    console.log("Not part of the set")
-                    res.status(401)
+                    res.status(401).send({ "data": { "message": "not part of set" } })
+                    return
                 } else if (setData.losers.includes(userId)) {
-                    if (!approve) {
-                        console.log("Not approved")
-                        res.status(201)
-                    } else {
-                        console.log("loser approves")
-                        isVerified = true
-                    }
+                    console.log("loser is authorized")
+                    isAuthorized = true
                 }
             } else if (setData.losers.includes(setData.submittedBy)) {
                 //a winner must approve this set
                 console.log("loser submitted")
                 if (setData.losers.includes(userId)) {
-                    console.log("Cannot approve set submitted by teammate")
-                    res.status(401)
+                    res.status(401).send({ "data": { "message": "cannot approve set submitted by teammate" } })
+                    return
                 }
                 else if (!setData.winners.includes(userId)) {
-                    console.log("Not part of the set")
-                    res.status(401)
+                    res.status(401).send({ "data": { "message": "not part of set" } })
                 } else if (setData.winners.includes(userId)) {
-                    if (!approve) {
-                        console.log("Not approved")
-                        res.status(201)
-                    } else {
-                        console.log("winner approves")
-                        isVerified = true
-                    }
+                    console.log("winner is authorized")
+                    isAuthorized = true
                 }
-            } else if(!setData.winners.includes(userId) && !setData.losers.includes(userId)){
-                console.log("Not part of set")
-                res.status(401)
-            } else {
-                console.log("non player, (possibly admin) reported set")
-                if(setData.winners.concat(setData.losers).includes(userId)){
-                    console.log("verifier is player")
-                    isVerified = approve
-                }
+            } else if (!setData.winners.includes(userId) && !setData.losers.includes(userId)) {
+                res.status(401).send({ "data": { "message": "not part of set" } })
+                return
+            } else if (setData.winners.concat(setData.losers).includes(userId)) {
+                console.log("possibly admin reported set, but verifier was player")
+                isAuthorized = true
             }
         }
     });
-    console.log("verified: " + isVerified)
+    console.log("isAuthorized: " + isAuthorized)
     //create new result
-    if (isVerified) {
-        setData.verified = true
-        admin.database().ref("sets-v2").child(groupId).child(setId).child("verified").set(true)
-        await index.createResultFromSet(setId, setData, groupId);
-        res.sendStatus(200)
-    } else {
-        res.end()
+    if (isAuthorized) {
+        if (approve == true) {
+            setData.verification = { isVerified: true, verifiedBy: userId, dateVerified: new Date().getTime() }
+            admin.database().ref("sets-v2").child(groupId).child(setId).set(setData)
+            await index.createResultFromSet(setId, setData, groupId);
+            res.status(200).send({ "data": { "message": "set verified", "setData": setData } })
+        } else {
+            setData.contestation = { isContested: true, contestedBy: userId, dateContested: new Date().getTime() }
+            admin.database().ref("sets-v2").child(groupId).child(setId).set(setData)
+            res.status(200).send({ "data": { "message": "set contested", "setData": setData } })
+        }
+        return;
     }
+    res.status(401).send({ "data": { "message": "User not authorized" } })
 }
 
 function approveJoinRequest(req, res) {
