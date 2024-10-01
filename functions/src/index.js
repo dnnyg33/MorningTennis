@@ -113,13 +113,13 @@ exports.test2 = functions.https.onRequest(async (req, res) => {
     let data = await admin.database().ref("sets").child(groupId).get()
     let weeks = data.val()
     for (const [weekName, week] of Object.entries(weeks)) {
-        for(const [pushId, set] of Object.entries(week)){
-            if(set.verification == null){
-                set.verification = {"isVerified": true, "verifiedBy": "admin", "dateVerified": new Date().getTime()} 
+        for (const [pushId, set] of Object.entries(week)) {
+            if (set.verification == null) {
+                set.verification = { "isVerified": true, "verifiedBy": "admin", "dateVerified": new Date().getTime() }
             }
             set.weekName = weekName
             set.timestamp = new Date().getTime()
-            if(set.winningScore == 8) {
+            if (set.winningScore == 8) {
                 if (set.losingScore >= 5) {
                     set.winningScore = 7
                 } else {
@@ -145,13 +145,13 @@ exports.test = functions.https.onRequest(async (req, res) => {
                     continue;
                 }
                 let newUtr;
-                if(ranking.utr == "NaN"){
+                if (ranking.utr == "NaN") {
                     newUtr = 4.0
                 } else {
                     newUtr = parseFloat(ranking.utr)
                 }
                 console.log("newUtr: " + newUtr)
-                
+
                 admin.database().ref('member_rankings').child(groupId).child(firebaseId).child("utr").set(newUtr)
             }
         }
@@ -232,7 +232,7 @@ calculateMatchRating = (victor, winningScore, losingScore, winnerUtr, loserUtr) 
     let gameDifference = Math.abs(winningScore - losingScore)
     let playerUtr
     let opponentUtr
-    if(victor){
+    if (victor) {
         playerUtr = winnerUtr
         opponentUtr = loserUtr
     } else {
@@ -245,7 +245,7 @@ calculateMatchRating = (victor, winningScore, losingScore, winnerUtr, loserUtr) 
     let utrFactor = .05
     let baseLoserRating = 1.1
     let matchRating
-    if(victor){
+    if (victor) {
         matchRating = baseWinnerRating + ((gameDifference * gameFactor) - (utrDifference * utrFactor))
         // console.log("matchRating for victory: " + matchRating + " game difference: " + gameDifference + " utr difference: " + utrDifference)
     } else {
@@ -253,7 +253,7 @@ calculateMatchRating = (victor, winningScore, losingScore, winnerUtr, loserUtr) 
         // console.log("matchRating for loss: " + matchRating + " game difference: " + gameDifference + " utr difference: " + utrDifference)
     }
     return matchRating
-   
+
 }
 
 calculateMatchWeight = (match) => {
@@ -261,13 +261,13 @@ calculateMatchWeight = (match) => {
     let baseDecayRate = .03
     let date1 = new Date()
     let date2 = new Date(match.date)
-    let utc1 =  Date.UTC(date1.getFullYear(), date1.getMonth(), date1.getDate())
-    let utc2 =  Date.UTC(date2.getFullYear(), date2.getMonth(), date2.getDate())
+    let utc1 = Date.UTC(date1.getFullYear(), date1.getMonth(), date1.getDate())
+    let utc2 = Date.UTC(date2.getFullYear(), date2.getMonth(), date2.getDate())
     let daysSinceMatch = Math.ceil(Math.abs(utc1 - utc2) / (1000 * 60 * 60 * 24))
     // console.log("daysSinceMatch: " + daysSinceMatch)
     let decayRate = Math.max(0, Math.min(baseDecayRate, 1));
     let weight = baseWeight * Math.pow(1 - decayRate, daysSinceMatch)
-    return weight 
+    return weight
 }
 
 
@@ -292,7 +292,7 @@ async function createResultFromSet(setId, setData, groupId) {
     console.log("createResultFromSet: " + JSON.stringify(setData));
     await admin.database().ref("member_rankings").once('value', async (snapshot) => {
         const rankings = snapshot.val();
-        if (rankings[groupId][setData.winners[0]] == null || rankings[groupId][setData.winners[1]] == null || 
+        if (rankings[groupId][setData.winners[0]] == null || rankings[groupId][setData.winners[1]] == null ||
             rankings[groupId][setData.losers[0]] == null || rankings[groupId][setData.losers[1]] == null) {
             console.log("rankings: " + JSON.stringify(rankings[groupId][setData.winners[0]]) + " for " + JSON.stringify(setData.winners[0]));
             console.log("rankings: " + JSON.stringify(rankings[groupId][setData.winners[1]]) + " for " + JSON.stringify(setData.winners[1]));
@@ -316,7 +316,7 @@ async function createResultFromSet(setId, setData, groupId) {
         });
         setData.winners.forEach(winner => {
             const newDate = new Date(setData.weekName);
-            newDate.setDate(newDate.getDate() + ((dayOfWeekAsInteger(setData.dayName) +6) % 7));
+            newDate.setDate(newDate.getDate() + ((dayOfWeekAsInteger(setData.dayName) + 6) % 7));
             let result = {
                 "setId": setId, "date": fmt(newDate),
                 "winningScore": setData.winningScore, "losingScore": setData.losingScore,
@@ -340,7 +340,7 @@ async function calculateUTR(firebaseId, utr) {
         //filter by group?
         //return up to 30 results for this user sorted by most recent
         return Object.values(data).sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 30)
-        
+
     })
     let matchHistory = matchHistorySnapshot.val()
     if (matchHistory == null || matchHistory.length == 0) {
