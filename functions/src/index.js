@@ -6,12 +6,12 @@ const sortingFullAvailability = require("./sorting-fullAvailability.js")
 const sortingWhenIsGood = require("./sorting-whenisgood.js")
 const notifications = require("./notifications.js")
 const crud = require("./crud.js")
+const utr = require("./utr_updates.js")
 module.exports.dayOfWeekAsInteger = dayOfWeekAsInteger;
 module.exports.shortenedName = shortenedName;
 module.exports.removeDuplicates = removeDuplicates;
 module.exports.removeEmptyDays = removeEmptyDays;
 module.exports.buildDynamicDaysMap = buildDynamicDaysMap
-module.exports.createResultFromSet = createResultFromSet
 
 admin.initializeApp()
 
@@ -65,7 +65,6 @@ exports.lateSubmissions = functions.database.ref("late-submissions/{groupId}/{we
         crud.processLateSubmission(snapshot, writeLocationV4))
 })
 
-
 exports.onSetReported = functions.database.ref("sets-v2/{groupId}/{pushKey}").onWrite(async (snapshot, context) => {
     //TODO create notification for players to validate
     const groupId = context.params.groupId;
@@ -84,6 +83,13 @@ exports.onSetReported = functions.database.ref("sets-v2/{groupId}/{pushKey}").on
     } else {
         console.log("Set already verified")
     }
+})
+
+
+//adhoc function to update UTRs
+exports.requestUTRUpdate = functions.https.onRequest(async (req, res) => {
+    await utr.executeUTRUpdate();
+    return res.sendStatus(200);
 })
 
 
@@ -108,63 +114,6 @@ exports.logout = functions.https.onRequest((req, res) => {
     })
 })
 
-exports.test2 = functions.https.onRequest(async (req, res) => {
-    const groupId = req.query["groupId"];
-    let data = await admin.database().ref("sets").child(groupId).get()
-    let weeks = data.val()
-    for (const [weekName, week] of Object.entries(weeks)) {
-        for (const [pushId, set] of Object.entries(week)) {
-            if (set.verification == null) {
-                set.verification = { "isVerified": true, "verifiedBy": "admin", "dateVerified": new Date().getTime() }
-            }
-            set.weekName = weekName
-            set.timestamp = new Date().getTime()
-            if (set.winningScore == 8) {
-                if (set.losingScore >= 5) {
-                    set.winningScore = 7
-                } else {
-                    set.winningScore = 6
-                }
-            }
-            admin.database().ref("sets-v2").child(groupId).child(pushId).set(set)
-        }
-    }
-    res.send("done")
-})
-
-
-exports.test = functions.https.onRequest(async (req, res) => {
-    // await createResultFromSet();
-    await admin.database().ref('member_rankings').once('value', async (snapshot) => {
-        const groups = snapshot.val();
-        for (const [groupId, group] of Object.entries(groups)) {
-            console.log("Fixing UTRs for group " + groupId);
-            for (const [firebaseId, ranking] of Object.entries(group)) {
-                console.log("Ranking " + firebaseId + " " + JSON.stringify(ranking));
-                if (ranking.utr == undefined || ranking.utr == null) {
-                    continue;
-                }
-                let newUtr;
-                if (ranking.utr == "NaN") {
-                    newUtr = 4.0
-                } else {
-                    newUtr = parseFloat(ranking.utr)
-                }
-                console.log("newUtr: " + newUtr)
-
-                admin.database().ref('member_rankings').child(groupId).child(firebaseId).child("utr").set(newUtr)
-            }
-        }
-    });
-    res.end("Done");
-})
-//adhoc function to update UTRs
-exports.requestUTRUpdate = functions.https.onRequest(async (req, res) => {
-    await executeUTRUpdate();
-    return res.sendStatus(200);
-})
-
-
 
 //A notification for an alternate who has been promoted to player due to an RSVP event or for a last minute change.
 exports.sendRSVPUpdateNotification = functions.https.onRequest(async (req, res) => {
@@ -178,7 +127,7 @@ exports.sendRSVPUpdateNotification = functions.https.onRequest(async (req, res) 
 })
 
 //schedules updateUTR function to run at when schedule opens
-exports.scheduleUpdateUTR = functions.pubsub.schedule('5 8 * * FRI')
+exports.scheduleUpdateUTR = functions.pubsub.schedule('5 8 * * SUN')
     .timeZone('America/Denver')
     .onRun(async (context) => {
         await executeUTRUpdate();
@@ -228,143 +177,8 @@ exports.scheduleOpenNotification = functions.pubsub.schedule('00 8 * * FRI')
     });
 
 
-calculateMatchRating = (victor, winningScore, losingScore, winnerUtr, loserUtr) => {
-    let gameDifference = Math.abs(winningScore - losingScore)
-    let playerUtr
-    let opponentUtr
-    if (victor) {
-        playerUtr = winnerUtr
-        opponentUtr = loserUtr
-    } else {
-        playerUtr = loserUtr
-        opponentUtr = winnerUtr
-    }
-    let utrDifference = playerUtr - opponentUtr
-    let baseWinnerRating = .9
-    let gameFactor = .1
-    let utrFactor = .05
-    let baseLoserRating = 1.1
-    let matchRating
-    if (victor) {
-        matchRating = baseWinnerRating + ((gameDifference * gameFactor) - (utrDifference * utrFactor))
-        // console.log("matchRating for victory: " + matchRating + " game difference: " + gameDifference + " utr difference: " + utrDifference)
-    } else {
-        matchRating = baseLoserRating - ((gameDifference * gameFactor) + (utrDifference * utrFactor))
-        // console.log("matchRating for loss: " + matchRating + " game difference: " + gameDifference + " utr difference: " + utrDifference)
-    }
-    return matchRating
-
-}
-
-calculateMatchWeight = (match) => {
-    let baseWeight = 10
-    let baseDecayRate = .03
-    let date1 = new Date()
-    let date2 = new Date(match.date)
-    let utc1 = Date.UTC(date1.getFullYear(), date1.getMonth(), date1.getDate())
-    let utc2 = Date.UTC(date2.getFullYear(), date2.getMonth(), date2.getDate())
-    let daysSinceMatch = Math.ceil(Math.abs(utc1 - utc2) / (1000 * 60 * 60 * 24))
-    // console.log("daysSinceMatch: " + daysSinceMatch)
-    let decayRate = Math.max(0, Math.min(baseDecayRate, 1));
-    let weight = baseWeight * Math.pow(1 - decayRate, daysSinceMatch)
-    return weight
-}
 
 
-async function executeUTRUpdate() {
-    return await admin.database().ref('member_rankings').once('value', async (snapshot) => {
-        const groups = snapshot.val();
-        for (const [groupId, group] of Object.entries(groups)) {
-            console.log("Calculating UTRs for group " + groupId);
-            for (const [firebaseId, ranking] of Object.entries(group)) {
-                console.log("Ranking " + firebaseId + " " + JSON.stringify(ranking));
-                let newUtr = await calculateUTR(firebaseId, ranking.utr);
-                if (newUtr == -1) {
-                    continue;
-                }
-                admin.database().ref('member_rankings').child(groupId).child(firebaseId).child("utr").set(newUtr)
-            }
-        }
-    });
-}
-
-async function createResultFromSet(setId, setData, groupId) {
-    console.log("createResultFromSet: " + JSON.stringify(setData));
-    await admin.database().ref("member_rankings").once('value', async (snapshot) => {
-        const rankings = snapshot.val();
-        if (rankings[groupId][setData.winners[0]] == null || rankings[groupId][setData.winners[1]] == null ||
-            rankings[groupId][setData.losers[0]] == null || rankings[groupId][setData.losers[1]] == null) {
-            console.log("rankings: " + JSON.stringify(rankings[groupId][setData.winners[0]]) + " for " + JSON.stringify(setData.winners[0]));
-            console.log("rankings: " + JSON.stringify(rankings[groupId][setData.winners[1]]) + " for " + JSON.stringify(setData.winners[1]));
-            console.log("rankings: " + JSON.stringify(rankings[groupId][setData.losers[0]]) + " for " + JSON.stringify(setData.losers[0]));
-            console.log("rankings: " + JSON.stringify(rankings[groupId][setData.losers[1]]) + " for " + JSON.stringify(setData.losers[1]));
-            console.log("null ranking found");
-            return;
-        }
-        let winnerUtr = (rankings[groupId][setData.winners[0]].utr + rankings[groupId][setData.winners[1]].utr).toFixed(2);
-        let loserUtr = (rankings[groupId][setData.losers[0]].utr + rankings[groupId][setData.losers[1]].utr).toFixed(2);
-
-        setData.losers.forEach(loser => {
-            let result = {
-                "setId": setId, "date": setData.timestamp,
-                "winningScore": setData.winningScore, "losingScore": setData.losingScore,
-                victor: false, "winnerUtr": winnerUtr, "loserUtr": loserUtr, "group": groupId,
-                "matchRating": calculateMatchRating(false, setData.winningScore, setData.losingScore, winnerUtr, loserUtr),
-            };
-            admin.database().ref("results-v2").child(loser).push(result);
-            console.log("loser result: " + JSON.stringify(result));
-        });
-        setData.winners.forEach(winner => {
-            const newDate = new Date(setData.weekName);
-            newDate.setDate(newDate.getDate() + ((dayOfWeekAsInteger(setData.dayName) + 6) % 7));
-            let result = {
-                "setId": setId, "date": fmt(newDate),
-                "winningScore": setData.winningScore, "losingScore": setData.losingScore,
-                victor: true, "winnerUtr": winnerUtr, "loserUtr": loserUtr, "group": groupId,
-                "matchRating": calculateMatchRating(true, setData.winningScore, setData.losingScore, winnerUtr, loserUtr),
-            };
-            admin.database().ref("results-v2").child(winner).push(result);
-            console.log("winner result: " + JSON.stringify(result));
-        });
-    });
-}
-
-async function calculateUTR(firebaseId, utr) {
-    let matchHistorySnapshot = await admin.database().ref('results').child(firebaseId).once('value', async (snapshot) => {
-        const data = snapshot.val()
-        if (data == null) {
-            console.log("No match history found for " + firebaseId)
-            return null
-        }
-        console.log("Calculating UTR for " + firebaseId)
-        //filter by group?
-        //return up to 30 results for this user sorted by most recent
-        return Object.values(data).sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 30)
-
-    })
-    let matchHistory = matchHistorySnapshot.val()
-    if (matchHistory == null || matchHistory.length == 0) {
-        return -1
-    }
-    let totalRating = 0
-    let totalWeight = 0
-    for (const [key, match] of Object.entries(matchHistory)) {
-        // let matchRating = calculateMatchRating(match.victor, match.winningScore, match.losingScore, match.winnerUtr, match.loserUtr)
-        // console.log("matchRating: " + matchRating)
-        let matchWeight = calculateMatchWeight(match)
-        // console.log("matchWeight: " + matchWeight)
-        totalRating += match.matchRating * matchWeight
-        totalWeight += matchWeight
-
-    }
-    let utrMultiplier = totalRating / totalWeight
-    console.log("utrMultiplier: " + utrMultiplier)
-    let previousUtr = 4.0
-    console.log("previous utr: " + previousUtr)
-    let newUtr = parseFloat((previousUtr * utrMultiplier).toFixed(2))
-    console.log("new utr: " + newUtr)
-    return newUtr
-}
 
 
 
@@ -410,16 +224,23 @@ async function runSort(groupId, incomingSubmissionsData, weekName) {
         }
         let algorithm = groupData.sortingAlgorithm;
         console.log("running " + algorithm + " algorithm for group: " + groupId);
-        if (algorithm == "balanceSkill") {
+        if (groupId == "provo" || groupId == "sunpro" || groupId == "test") {
             sortingBalanceSkill.runSort(incomingSubmissionsData, groupId, weekName);
-        } else if (algorithm == "timePreference") {
             sortingTimePreference.runSort(incomingSubmissionsData, groupId, weekName);
-        } else if (algorithm == "fullAvailability") {
             sortingFullAvailability.runSort(incomingSubmissionsData, groupId, weekName);
-        } else if (algorithm == "whenIsGood") {
             sortingWhenIsGood.runSort(incomingSubmissionsData, groupId, weekName);
         } else {
-            console.log("No algorithm found for group " + groupId);
+            if (algorithm == "balanceSkill") {
+                sortingBalanceSkill.runSort(incomingSubmissionsData, groupId, weekName);
+            } else if (algorithm == "timePreference") {
+                sortingTimePreference.runSort(incomingSubmissionsData, groupId, weekName);
+            } else if (algorithm == "fullAvailability") {
+                sortingFullAvailability.runSort(incomingSubmissionsData, groupId, weekName);
+            } else if (algorithm == "whenIsGood") {
+                sortingWhenIsGood.runSort(incomingSubmissionsData, groupId, weekName);
+            } else {
+                console.log("No algorithm found for group " + groupId);
+            }
         }
         admin.database().ref('groups-v2').child(groupId).child("scheduleIsBuilding").set(false);
     });

@@ -2,6 +2,7 @@ const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const index = require('./index.js')
 const notifications = require('./notifications.js')
+const utr = require('./utr_updates.js')
 module.exports.processLateSubmission = processLateSubmission;
 module.exports.createUser = createUser;
 module.exports.joinGroupRequest = joinGroupRequest;
@@ -192,7 +193,6 @@ function toggleAdmin(req, res) {
 async function approveSetRequest(req, res) {
     console.log("req.body: " + JSON.stringify(req.body))
     const data = req.body.data;
-    console.log("data: " + JSON.stringify(data))
     const groupId = data.groupId;
     const setId = data.pushId;
     const userId = data.userId;
@@ -221,17 +221,17 @@ async function approveSetRequest(req, res) {
         } else {
             console.log("checking if user can approve")
             if (setData.submittedBy == userId) {
-                res.status(401).send({ "data": { "message": "cannot approve own set" } })
+                res.status(403).send({ "data": { "message": "cannot approve own set" } })
                 return
             } else if (setData.winners.includes(setData.submittedBy)) {
                 //a loser must approve this set
                 console.log("winner submitted")
                 if (setData.winners.includes(userId)) {
-                    res.status(401).send({ "data": { "message": "cannot approve set submitted by teammate" } })
+                    res.status(403).send({ "data": { "message": "cannot approve set submitted by teammate" } })
                     return
                 }
                 else if (!setData.losers.includes(userId)) {
-                    res.status(401).send({ "data": { "message": "not part of set" } })
+                    res.status(403).send({ "data": { "message": "not part of set" } })
                     return
                 } else if (setData.losers.includes(userId)) {
                     console.log("loser is authorized")
@@ -241,17 +241,17 @@ async function approveSetRequest(req, res) {
                 //a winner must approve this set
                 console.log("loser submitted")
                 if (setData.losers.includes(userId)) {
-                    res.status(401).send({ "data": { "message": "cannot approve set submitted by teammate" } })
+                    res.status(403).send({ "data": { "message": "cannot approve set submitted by teammate" } })
                     return
                 }
                 else if (!setData.winners.includes(userId)) {
-                    res.status(401).send({ "data": { "message": "not part of set" } })
+                    res.status(403).send({ "data": { "message": "not part of set" } })
                 } else if (setData.winners.includes(userId)) {
                     console.log("winner is authorized")
                     isAuthorized = true
                 }
             } else if (!setData.winners.includes(userId) && !setData.losers.includes(userId)) {
-                res.status(401).send({ "data": { "message": "not part of set" } })
+                res.status(403).send({ "data": { "message": "not part of set" } })
                 return
             } else if (setData.winners.concat(setData.losers).includes(userId)) {
                 console.log("possibly admin reported set, but verifier was player")
@@ -265,7 +265,7 @@ async function approveSetRequest(req, res) {
         if (approve == true) {
             setData.verification = { isVerified: true, verifiedBy: userId, dateVerified: new Date().getTime() }
             admin.database().ref("sets-v2").child(groupId).child(setId).set(setData)
-            await index.createResultFromSet(setId, setData, groupId);
+            await utr.createResultFromSet(setId, setData, groupId);
             res.status(200).send({ "data": { "message": "set verified", "setData": setData } })
         } else {
             setData.contestation = { isContested: true, contestedBy: userId, dateContested: new Date().getTime() }
