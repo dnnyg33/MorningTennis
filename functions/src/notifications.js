@@ -144,6 +144,9 @@ async function getRegistrationTokensFromFirebaseIds(firebaseIds) {
 async function sendNotificationsToGroup(message, registrationTokens) {
     let dryRun = process.env.FUNCTIONS_EMULATOR == "true"
     console.log("Sending message (dryRun="+dryRun+"):")
+    console.log("tokens:")
+    console.log(registrationTokens)
+    console.log("message:")
     console.log(message)
     await admin.messaging().sendEachForMulticast(message = message, dryRun = dryRun)
         .then((response) => {

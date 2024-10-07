@@ -1,5 +1,6 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
+const index = require("./index");
 module.exports.createResultFromSet = createResultFromSet
 module.exports.executeUTRUpdate = executeUTRUpdate
 
@@ -113,26 +114,28 @@ async function createResultFromSet(setId, setData, groupId) {
         let loserUtr = (rankings[groupId][setData.losers[0]].utr + rankings[groupId][setData.losers[1]].utr).toFixed(2);
 
         setData.losers.forEach(loser => {
-            let result = {
-                "setId": setId, "date": setData.timestamp,
-                "winningScore": setData.winningScore, "losingScore": setData.losingScore,
-                victor: false, "winnerUtr": winnerUtr, "loserUtr": loserUtr, "group": groupId,
-                "matchRating": calculateMatchRating(false, setData.winningScore, setData.losingScore, winnerUtr, loserUtr),
-            };
+            let result = createResult(false);
             admin.database().ref("results-v2").child(loser).push(result);
             console.log("loser result: " + JSON.stringify(result));
         });
         setData.winners.forEach(winner => {
-            const newDate = new Date(setData.weekName);
-            newDate.setDate(newDate.getDate() + ((dayOfWeekAsInteger(setData.dayName) + 6) % 7));
-            let result = {
-                "setId": setId, "date": fmt(newDate),
-                "winningScore": setData.winningScore, "losingScore": setData.losingScore,
-                victor: true, "winnerUtr": winnerUtr, "loserUtr": loserUtr, "group": groupId,
-                "matchRating": calculateMatchRating(true, setData.winningScore, setData.losingScore, winnerUtr, loserUtr),
-            };
+            let result = createResult(true);
             admin.database().ref("results-v2").child(winner).push(result);
             console.log("winner result: " + JSON.stringify(result));
         });
+
+
+        function createResult(victor) {
+            const newDate = new Date(setData.weekName);
+            newDate.setDate(newDate.getDate() + ((index.dayOfWeekAsInteger(setData.dayName) + 6) % 7));
+            let result = {
+                "setId": setId, "date": index.fmt(newDate),
+                "timestamp": setData.timestamp,
+                "winningScore": setData.winningScore, "losingScore": setData.losingScore,
+                victor: victor, "winnerUtr": winnerUtr, "loserUtr": loserUtr, "group": groupId,
+                "matchRating": calculateMatchRating(victor, setData.winningScore, setData.losingScore, winnerUtr, loserUtr),
+            };
+            return result;
+        }
     });
 }

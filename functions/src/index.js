@@ -12,6 +12,7 @@ module.exports.shortenedName = shortenedName;
 module.exports.removeDuplicates = removeDuplicates;
 module.exports.removeEmptyDays = removeEmptyDays;
 module.exports.buildDynamicDaysMap = buildDynamicDaysMap
+module.exports.fmt = fmt
 
 admin.initializeApp()
 
@@ -75,9 +76,13 @@ exports.onSetReported = functions.database.ref("sets-v2/{groupId}/{pushKey}").on
         const players = setData.winners.concat(setData.losers);
         await notifications.getRegistrationTokensFromFirebaseIds(players).then((tokens) => {
             notifications.sendNotificationsToGroup({
-                "title": "New set reported",
-                "body": "A new set has been reported. Please verify the results.",
-                "data": { "setData": setData }
+                "notification": {
+                    "title": "New set reported",
+                    "body": "A new set has been reported. Please verify the results.",
+                },
+                "tokens": tokens,
+                // "data": { "setData": setData },
+
             }, tokens)
         })
     } else {
@@ -130,7 +135,7 @@ exports.sendRSVPUpdateNotification = functions.https.onRequest(async (req, res) 
 exports.scheduleUpdateUTR = functions.pubsub.schedule('5 8 * * SUN')
     .timeZone('America/Denver')
     .onRun(async (context) => {
-        await executeUTRUpdate();
+        await utr.executeUTRUpdate();
     })
 
 //notification each day for players
