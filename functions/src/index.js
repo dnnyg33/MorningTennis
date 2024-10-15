@@ -96,7 +96,7 @@ exports.requestUTRUpdate = functions.https.onRequest(async (req, res) => {
     //get groupId from path
     const groupId = req.query["groupId"];
     await utr.executeUTRUpdate(groupId);
-    return res.sendStatus(200);
+    return res.status(200).send({ "data": { "result": "success", "message": "UTR update requested" } });
 })
 
 
