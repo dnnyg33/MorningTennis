@@ -4,18 +4,20 @@ const index = require("./index");
 module.exports.createResultFromSet = createResultFromSet
 module.exports.executeUTRUpdate = executeUTRUpdate
 
-async function executeUTRUpdate() {
+async function executeUTRUpdate(requestedGroupId) {
     return await admin.database().ref('member_rankings').once('value', async (snapshot) => {
         const groups = snapshot.val();
         for (const [groupId, group] of Object.entries(groups)) {
-            console.log("Calculating UTRs for group " + groupId);
-            for (const [firebaseId, ranking] of Object.entries(group)) {
-                console.log("Existing ranking for " + firebaseId + ": " + JSON.stringify(ranking));
-                let newUtr = await calculateUTR(firebaseId, ranking.utr);
-                if (newUtr == -1) {
-                    continue;
+            if (groupId == requestedGroupId || requestedGroupId == null) {
+                console.log("\n\nCalculating UTRs for group " + groupId);
+                for (const [firebaseId, ranking] of Object.entries(group)) {
+                    console.log("Existing ranking for " + firebaseId + ": " + JSON.stringify(ranking));
+                    let newUtr = await calculateUTR(firebaseId, ranking.utr);
+                    if (newUtr == -1) {
+                        continue;
+                    }
+                    admin.database().ref('member_rankings').child(groupId).child(firebaseId).child("utr").set(newUtr)
                 }
-                admin.database().ref('member_rankings').child(groupId).child(firebaseId).child("utr").set(newUtr)
             }
         }
     });

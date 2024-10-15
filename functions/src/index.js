@@ -93,7 +93,9 @@ exports.onSetReported = functions.database.ref("sets-v2/{groupId}/{pushKey}").on
 
 //adhoc function to update UTRs
 exports.requestUTRUpdate = functions.https.onRequest(async (req, res) => {
-    await utr.executeUTRUpdate();
+    //get groupId from path
+    const groupId = req.query["groupId"];
+    await utr.executeUTRUpdate(groupId);
     return res.sendStatus(200);
 })
 
@@ -229,7 +231,7 @@ async function runSort(groupId, incomingSubmissionsData, weekName) {
         }
         let algorithm = groupData.sortingAlgorithm;
         console.log("running " + algorithm + " algorithm for group: " + groupId);
-        if (groupId == "provo" || groupId == "sunpro" || groupId == "test") {
+        if (groupId == "provo" || groupId == "test") {
             sortingBalanceSkill.runSort(incomingSubmissionsData, groupId, weekName);
             sortingTimePreference.runSort(incomingSubmissionsData, groupId, weekName);
             sortingFullAvailability.runSort(incomingSubmissionsData, groupId, weekName);
@@ -354,7 +356,6 @@ function buildDynamicDaysMap(groupId) {
                 } else {
                     key = capitalizeFirstLetter(meetup.dayOfWeek) + " " + meetup.time;
                 }
-                console.log("key: " + key + "key: " + key.trim() + "keyEnd")
                 daysMap[key.trim()] = 0;
             });
         } else {
