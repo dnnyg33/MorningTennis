@@ -70,9 +70,9 @@ exports.onSetReported = functions.database.ref("sets-v2/{groupId}/{pushKey}").on
     //TODO create notification for players to validate
     const groupId = context.params.groupId;
     const setData = snapshot.after.val();
-    const isVerified = setData.verification?.isVerified ?? false;
-    if (!isVerified) {
-        console.log("New unverified set reported")
+    const nonReviewed = setData.verification == null && setData.contestation == null;
+    if (nonReviewed) {
+        console.log("New unreviewed set reported")
         const players = setData.winners.concat(setData.losers);
         await notifications.getRegistrationTokensFromFirebaseIds(players).then((tokens) => {
             notifications.sendNotificationsToGroup({
@@ -86,7 +86,7 @@ exports.onSetReported = functions.database.ref("sets-v2/{groupId}/{pushKey}").on
             }, tokens)
         })
     } else {
-        console.log("Set already verified")
+        console.log("Set already reviewed")
     }
 })
 
