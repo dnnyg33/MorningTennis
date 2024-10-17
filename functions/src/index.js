@@ -134,14 +134,14 @@ exports.sendRSVPUpdateNotification = functions.https.onRequest(async (req, res) 
 })
 
 //schedules updateUTR function to run at when schedule opens
-exports.scheduleUpdateUTR = functions.pubsub.schedule('5 8 * * SUN')
+exports.scheduleUpdateUTR = functions.pubsub.schedule('5 8 * * *')
     .timeZone('America/Denver')
     .onRun(async (context) => {
         await utr.executeUTRUpdate();
     })
 
 //notification each day for players
-exports.scheduleReminderNotification = functions.pubsub.schedule('20 15 * * MON-THU')
+exports.scheduleReminderNotification = functions.pubsub.schedule('0 12 * * *')
     .timeZone('America/Denver')
     .onRun(async (context) => {
         await notifications.run_scheduledToPlayReminderForAllGroups()
