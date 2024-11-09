@@ -134,7 +134,7 @@ exports.sendRSVPUpdateNotification = functions.https.onRequest(async (req, res) 
 })
 
 //schedules updateUTR function to run at when schedule opens
-exports.scheduleUpdateUTR = functions.pubsub.schedule('5 8 * * *')
+exports.scheduleUpdateUTR = functions.pubsub.schedule('5 12 * * *')
     .timeZone('America/Denver')
     .onRun(async (context) => {
         await utr.executeUTRUpdate();

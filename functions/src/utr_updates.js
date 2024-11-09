@@ -42,8 +42,6 @@ async function calculateUTR(firebaseId, utr) {
     let totalRating = 0
     let totalWeight = 0
     for (const [key, match] of Object.entries(matchHistory)) {
-        // let matchRating = calculateMatchRating(match.victor, match.winningScore, match.losingScore, match.winnerUtr, match.loserUtr)
-        // console.log("matchRating: " + match.matchRating)
         let matchWeight = calculateMatchWeight(match)
         // console.log("matchWeight: " + match.matchWeight)
         totalRating += match.matchRating * matchWeight
@@ -57,8 +55,15 @@ async function calculateUTR(firebaseId, utr) {
     return newUtr
 }
 
-calculateMatchRating = (victor, winningScore, losingScore, winnerUtr, loserUtr) => {
+calculateMatchRating = (victor, winningScore, losingScore, winnerUtr, loserUtr, winnerServedFirst) => {
     let gameDifference = Math.abs(winningScore - losingScore)
+    let gameCount = winningScore + losingScore
+    const mod = gameCount % 2;
+    if (winnerServedFirst && mod == 0) {
+        gameDifference = gameDifference + .5
+    } else if (!winnerServedFirst && mod == 1) {
+        gameDifference = gameDifference - .5
+    }
     let playerUtr
     let opponentUtr
     if (victor) {
@@ -135,7 +140,7 @@ async function createResultFromSet(setId, setData, groupId) {
                 "timestamp": setData.timestamp,
                 "winningScore": setData.winningScore, "losingScore": setData.losingScore,
                 victor: victor, "winnerUtr": winnerUtr, "loserUtr": loserUtr, "group": groupId,
-                "matchRating": calculateMatchRating(victor, setData.winningScore, setData.losingScore, winnerUtr, loserUtr),
+                "matchRating": calculateMatchRating(victor, setData.winningScore, setData.losingScore, winnerUtr, loserUtr, setData.winnersServedFirst),
             };
             return result;
         }
