@@ -474,7 +474,7 @@ function deleteAccount(req, res) {
                     for (const [key, value] of Object.entries(adminList)) {
                         console.log("key: " + key + " value: " + value)
                         if (value == body.userId) {
-                            delete adminList[key]
+                            adminList[key] = value + "_deleted"
                             console.log("adminList: " + JSON.stringify(adminList))
                             removedLog.push("groups-v2." + group + ".admins." + key)
                             db.ref("groups-v2").child(group).child("admins").set(adminList)
