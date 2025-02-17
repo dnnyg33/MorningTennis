@@ -138,6 +138,7 @@ async function createResultFromSet(setId, setData, groupId) {
             let result = {
                 "setId": setId, "date": index.fmt(newDate),
                 "timestamp": setData.timestamp,
+                "winners": setData.winners, "losers": setData.losers,
                 "winningScore": setData.winningScore, "losingScore": setData.losingScore,
                 victor: victor, "winnerUtr": winnerUtr, "loserUtr": loserUtr, "group": groupId,
                 "matchRating": calculateMatchRating(victor, setData.winningScore, setData.losingScore, winnerUtr, loserUtr, setData.winnersServedFirst),
