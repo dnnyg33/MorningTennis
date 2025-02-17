@@ -122,13 +122,13 @@ async function createResultFromSet(setId, setData, groupId) {
 
         setData.losers.forEach(loser => {
             let result = createResult(false);
-            admin.database().ref("results-v2").child(loser).push(result);
-            console.log("loser result: " + JSON.stringify(result));
+            let pushId = admin.database().ref("results-v2").child(loser).push(result);
+            console.log("loser result: " + pushId + " " + JSON.stringify(result));
         });
         setData.winners.forEach(winner => {
             let result = createResult(true);
-            admin.database().ref("results-v2").child(winner).push(result);
-            console.log("winner result: " + JSON.stringify(result));
+            let pushId = admin.database().ref("results-v2").child(winner).push(result);
+            console.log("winner result: " + pushId + " " + JSON.stringify(result));
         });
 
 

@@ -7,6 +7,7 @@ const sortingWhenIsGood = require("./sorting-whenisgood.js")
 const notifications = require("./notifications.js")
 const crud = require("./crud.js")
 const utr = require("./utr_updates.js")
+const dbScripts = require("./databaseScripts.js")
 module.exports.dayOfWeekAsInteger = dayOfWeekAsInteger;
 module.exports.shortenedName = shortenedName;
 module.exports.removeDuplicates = removeDuplicates;
@@ -67,7 +68,7 @@ exports.lateSubmissions = functions.database.ref("late-submissions/{groupId}/{we
 })
 
 exports.onSetReported = functions.database.ref("sets-v2/{groupId}/{pushKey}").onWrite(async (snapshot, context) => {
-    //TODO create notification for players to validate
+    
     const groupId = context.params.groupId;
     const setData = snapshot.after.val();
     const nonReviewed = setData.verification == null && setData.contestation == null;
@@ -217,6 +218,10 @@ exports.deleteAccount = functions.https.onRequest((req, res) => {
 })
 exports.inviteUserToGroup = functions.https.onRequest((req, res) => {
     crud.inviteUserToGroup(req, res)
+})
+
+exports.addPlayersToResults = functions.https.onRequest(async (req, res) => {
+    await dbScripts.addPlayersToResults(req, res)
 })
 
 
