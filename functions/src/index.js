@@ -21,8 +21,17 @@ admin.initializeApp()
 // // https://firebase.google.com/docs/functions/write-firebase-functions
 //
 
+
 exports.sortWeekAfterAlgoChange = functions.database.ref("/groups-v2/{groupId}/sortingAlgorithm").onWrite(async (snapshot, context) => {
     const groupId = context.params.groupId;
+    
+     // Check if the group exists
+     const groupSnapshot = await admin.database().ref(`/groups-v2/${groupId}`).get();
+     if (!groupSnapshot.exists()) {
+         console.log(`Group ${groupId} does not exist. Exiting function.`);
+         return null; // Exit early if the group is deleted
+     }
+
     const weekName = createNewWeekDbPath("Monday");
     const incomingSubmissionsData = (await admin.database().ref("incoming-v4").child(groupId).child(weekName).get()).val()
     await runSort(groupId, incomingSubmissionsData, weekName);
@@ -215,6 +224,9 @@ exports.modifyGroupMember = functions.https.onRequest((req, res) => {
 })
 exports.deleteAccount = functions.https.onRequest((req, res) => {
     crud.deleteAccount(req, res)
+})
+exports.deleteGroup = functions.https.onRequest((req, res) => {
+    crud.deleteGroup(req, res)
 })
 exports.inviteUserToGroup = functions.https.onRequest((req, res) => {
     crud.inviteUserToGroup(req, res)

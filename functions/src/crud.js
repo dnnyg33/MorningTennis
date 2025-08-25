@@ -12,6 +12,7 @@ module.exports.approveSetRequest = approveSetRequest;
 module.exports.modifyGroupMember = modifyGroupMember;
 module.exports.inviteUserToGroup = inviteUserToGroup;
 module.exports.deleteAccount = deleteAccount;
+module.exports.deleteGroup = deleteGroup;
 
 
 /**
@@ -165,7 +166,7 @@ function toggleAdmin(req, res) {
             return;
         }
         //check that user is admin of group
-        if (!group.admins.includes(body.adminId)) {
+        if (!Object.values(group.admins).includes(body.adminId)) {
             res.send(401, { "data": { "result": "failure", "reason": "user is not admin" } })
             return;
         }
@@ -277,61 +278,62 @@ async function approveSetRequest(req, res) {
     res.status(401).send({ "data": { "message": "User not authorized" } })
 }
 
-function approveJoinRequest(req, res) {
+async function approveJoinRequest(req, res) {
     const body = req.body.data;
-    admin.database().ref("joinRequests").child(body.groupId).child(body.pushId).once('value', (snapshot) => {
-        const request = snapshot.val()
-        if (request == null) {
+    console.log("request body: " + JSON.stringify(body))
+    admin.database().ref("joinRequests").child(body.groupId).child(body.pushId).once('value', async (snapshot) => {
+        const joinRequest = snapshot.val()
+        console.log("joinRequest: " + JSON.stringify(joinRequest))
+        if (joinRequest == null) {
             res.send({ "data": { "result": "failure", "reason": "joinRequest not found" } })
         } else {
+            let group = (await admin.database().ref("groups-v2").child(body.groupId).get()).val();
+            //verify that user is admin
+            const admins = group.admins
+            if (!Object.values(admins).includes(body.adminId)) {
+                console.log(body.adminId + " not found")
+                res.sendStatus(401)
+                return;
+            }
 
-            admin.database().ref("groups-v2").child(body.groupId).child("admins").once('value', (snapshot) => {
-                //verify that user is admin
-                const admins = snapshot.val()
-                if (!Object.values(admins).includes(body.adminId)) {
-                    console.log(body.adminId + "not found")
-                    res.sendStatus(401)
-                    return;
-                }
-            }).then(() => {
+            //change status of request to approved
+            joinRequest.status = "approved"
+            admin.database().ref("joinRequests").child(body.groupId).child(body.pushId).update(joinRequest)
 
-                //change status of request to approved
-                request.status = "approved"
-                admin.database().ref("joinRequests").child(body.groupId).child(body.pushId).update(request)
+            //append groupId to user's list of groups
+            let userGroups = (await admin.database().ref("approvedNumbers").child(joinRequest.userId).child('groups').get()).val();
+            if (userGroups == null) {
+                userGroups = []
+            }
+            if (userGroups.includes(body.groupId)) {
+                console.log("already in group, exiting")
+                res.send({ "data": { "result": "failure", "reason": "already in group" } })
+                return
+            } else {
+                userGroups.push(body.groupId)
+                admin.database().ref("approvedNumbers").child(joinRequest.userId).child("groups").set(userGroups)
+                res.send({ "data": { "result": "success", "userGroups": userGroups } })
+            }
+            
+            console.log("create member_ranking for this user")
+            admin.database().ref("member_rankings").child(body.groupId).child(joinRequest.userId).set({ "utr": 4, "goodwill": 1 })
 
-                //append groupId to user's list of groups
-                admin.database().ref("approvedNumbers").child(body.userId).child('groups').once('value', (snapshotGroups) => {
-                    var groups = snapshotGroups.val()
-                    if (groups == null) {
-                        groups = []
-                    }
-                    if (groups.includes(body.groupId)) {
-                        res.send({ "data": { "result": "failure", "reason": "already in group" } })
-                    } else {
-                        groups.push(body.groupId)
-                        admin.database().ref("approvedNumbers").child(body.userId).child("groups").update(groups)
-                        res.send({ "data": { "result": "success" } })
-                    }
-                })
-                //create member_ranking for this user
-                admin.database().ref("member_rankings").child(body.groupId).child(body.userId).set({ "utr": 4, "goodwill": 1 })
-
-                //send notification to user
-                admin.database().ref("approvedNumbers").child(body.userId).once('value', (snapshot) => {
-                    const user = snapshot.val()
+            console.log("send notification to user")
+            admin.database().ref("approvedNumbers").child(joinRequest.userId).once('value', (snapshot) => {
+                const user = snapshot.val()
+                console.log("user: " + JSON.stringify(user))
+                notifications.getRegistrationTokensFromFirebaseIds([user.firebaseId]).then(registrationTokens => {
                     const message = {
                         "notification": {
                             "title": "You've been added to a group",
-                            "body": "You have been added to " + body.groupName + ". Tap to view the group."
+                            "body": "You have been added to " + group.name + ". Tap to view the group."
                         },
-                        "token": user.tokens[0],
+                        "tokens": registrationTokens
                     };
-                    getNotificationGroup([user.userId]).then(registrationTokens => {
-                        notifications.sendNotificationsToGroup(message, registrationTokens)
-                    })
+                    notifications.sendNotificationsToGroup(message, registrationTokens)
                 })
+            })
 
-            });
         }
     });
 };
@@ -469,7 +471,15 @@ function deleteAccount(req, res) {
                 console.log("group: " + group)
                 //remove as admin
                 const adminPromise = db.ref("groups-v2").child(group).child("admins").once('value', (snapshot) => {
+                    //if group only has 1 admin, delete group
                     const adminList = snapshot.val()
+                    if (adminList.length == 1) {
+                        console.log("only 1 admin in group. removing group: " + group)
+                        db.ref("groups-v2").child(group).remove()
+                        removedLog.push("groups-v2." + group)
+                        return;
+                    }
+                    //if user is admin, remove them from the list
                     console.log("adminList: " + JSON.stringify(adminList))
                     for (const [key, value] of Object.entries(adminList)) {
                         console.log("key: " + key + " value: " + value)
@@ -524,6 +534,63 @@ function deleteAccount(req, res) {
         res.send({ "data": { "result": "success", "log": removedLog } })
     });
 };
+
+function deleteGroup(req, res) {
+    const body = req.body.data;
+    const db = admin.database();
+    const removedLog = []
+    const promises = []
+    const groupPromise = db.ref("groups-v2").child(body.groupId).once('value', (snapshot) => {
+        const group = snapshot.val()
+        if (group == null) {
+            res.status(400).send({ "data": { "result": "failure", "reason": "group not found" } })
+            return;
+        }
+        //check that user is admin of group
+        if (!Object.values(group.admins).includes(body.adminId)) {
+            res.status(401).send({ "data": { "result": "failure", "reason": "user is not admin" } })
+            return;
+        }
+        //remove group
+        db.ref("groups-v2").child(body.groupId).remove()
+        removedLog.push("groups-v2." + body.groupId)
+
+        //remove member rankings for groups
+        removedLog.push("member_ranking." + body.groupId)
+        db.ref("member_rankings").child(body.groupId).remove()
+
+        //remove join requests
+        const joinPromise = db.ref("joinRequests").child(body.groupId).once('value', (snapshot) => {
+            const joinRequests = snapshot.val()
+            if (joinRequests != null) {
+                for (const [key, request] of Object.entries(joinRequests)) {
+                    db.ref("joinRequests").child(body.groupId).child(key).remove()
+                    removedLog.push("joinRequests." + key)
+                }
+            }
+        });
+        promises.push(joinPromise)
+
+        //remove group from all users
+        const usersPromise = db.ref("approvedNumbers").once('value', (snapshot) => {
+            const users = snapshot.val()
+            for (const [key, user] of Object.entries(users)) {
+                if (user.groups != null && user.groups.includes(body.groupId)) {
+                    user.groups = user.groups.filter(g => g !== body.groupId)
+                    db.ref("approvedNumbers").child(key).child("groups").set(user.groups)
+                    removedLog.push("approvedNumbers." + key + ".groups." + body.groupId)
+                }
+            }
+        });
+        promises.push(usersPromise)
+
+    });
+    promises.push(groupPromise)
+    Promise.all(promises).then(() => {
+        console.log("removedLog: " + removedLog)
+        res.send({ "data": { "result": "success", "log": removedLog } })
+    });
+}
 
 function processLateSubmission(snapshot, writeLocation) {
     const original = snapshot.after.val()
