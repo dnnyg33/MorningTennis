@@ -8,6 +8,8 @@ const notifications = require("./notifications.js")
 const crud = require("./crud.js")
 const utr = require("./utr_updates.js")
 const dbScripts = require("./databaseScripts.js")
+// const express = require("express");
+// const app = express();
 module.exports.dayOfWeekAsInteger = dayOfWeekAsInteger;
 module.exports.shortenedName = shortenedName;
 module.exports.removeDuplicates = removeDuplicates;
@@ -16,6 +18,7 @@ module.exports.buildDynamicDaysMap = buildDynamicDaysMap
 module.exports.fmt = fmt
 
 admin.initializeApp()
+// app.use(express.json());
 
 // // Create and Deploy Your First Cloud Functions
 // // https://firebase.google.com/docs/functions/write-firebase-functions
@@ -222,10 +225,10 @@ exports.approveSetRequest = functions.https.onRequest((req, res) => {
 exports.modifyGroupMember = functions.https.onRequest((req, res) => {
     crud.modifyGroupMember(req, res)
 })
-exports.deleteAccount = functions.https.onRequest((req, res) => {
+exports.deleteAccount = functions.https.onCall((req, res) => {
     crud.deleteAccount(req, res)
 })
-exports.deleteGroup = functions.https.onRequest((req, res) => {
+exports.deleteGroup = functions.https.onCall((req, res) => {
     crud.deleteGroup(req, res)
 })
 exports.inviteUserToGroup = functions.https.onRequest((req, res) => {

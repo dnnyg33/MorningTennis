@@ -460,7 +460,8 @@ function modifyGroupMember(req, res) {
 
 function deleteAccount(req, res) {
     const db = admin.database();
-    const body = req.body.data;
+    console.log("req.body: " + JSON.stringify(req.body))
+    const body = req.body;
     const removedLog = []
     const promises = []
     const usersPromise = admin.database().ref("approvedNumbers").child(body.userId).once('value', (snapshot) => {
@@ -536,7 +537,8 @@ function deleteAccount(req, res) {
 };
 
 function deleteGroup(req, res) {
-    const body = req.body.data;
+    const body = req.body;
+    console.log(JSON.stringify(body))
     const db = admin.database();
     const removedLog = []
     const promises = []
