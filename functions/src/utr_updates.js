@@ -4,18 +4,20 @@ const index = require("./index");
 module.exports.createResultFromSet = createResultFromSet
 module.exports.executeUTRUpdate = executeUTRUpdate
 
-async function executeUTRUpdate() {
+async function executeUTRUpdate(requestedGroupId) {
     return await admin.database().ref('member_rankings').once('value', async (snapshot) => {
         const groups = snapshot.val();
         for (const [groupId, group] of Object.entries(groups)) {
-            console.log("Calculating UTRs for group " + groupId);
-            for (const [firebaseId, ranking] of Object.entries(group)) {
-                console.log("Existing ranking for " + firebaseId + ": " + JSON.stringify(ranking));
-                let newUtr = await calculateUTR(firebaseId, ranking.utr);
-                if (newUtr == -1) {
-                    continue;
+            if (groupId == requestedGroupId || requestedGroupId == null) {
+                console.log("\n\nCalculating UTRs for group " + groupId);
+                for (const [firebaseId, ranking] of Object.entries(group)) {
+                    console.log("Existing ranking for " + firebaseId + ": " + JSON.stringify(ranking));
+                    let newUtr = await calculateUTR(firebaseId, ranking.utr);
+                    if (newUtr == -1) {
+                        continue;
+                    }
+                    admin.database().ref('member_rankings').child(groupId).child(firebaseId).child("utr").set(newUtr)
                 }
-                admin.database().ref('member_rankings').child(groupId).child(firebaseId).child("utr").set(newUtr)
             }
         }
     });
@@ -40,8 +42,6 @@ async function calculateUTR(firebaseId, utr) {
     let totalRating = 0
     let totalWeight = 0
     for (const [key, match] of Object.entries(matchHistory)) {
-        // let matchRating = calculateMatchRating(match.victor, match.winningScore, match.losingScore, match.winnerUtr, match.loserUtr)
-        // console.log("matchRating: " + match.matchRating)
         let matchWeight = calculateMatchWeight(match)
         // console.log("matchWeight: " + match.matchWeight)
         totalRating += match.matchRating * matchWeight
@@ -55,8 +55,15 @@ async function calculateUTR(firebaseId, utr) {
     return newUtr
 }
 
-calculateMatchRating = (victor, winningScore, losingScore, winnerUtr, loserUtr) => {
+calculateMatchRating = (victor, winningScore, losingScore, winnerUtr, loserUtr, winnerServedFirst) => {
     let gameDifference = Math.abs(winningScore - losingScore)
+    let gameCount = winningScore + losingScore
+    const mod = gameCount % 2;
+    if (winnerServedFirst && mod == 0) {
+        gameDifference = gameDifference + .5
+    } else if (!winnerServedFirst && mod == 1) {
+        gameDifference = gameDifference - .5
+    }
     let playerUtr
     let opponentUtr
     if (victor) {
@@ -115,13 +122,13 @@ async function createResultFromSet(setId, setData, groupId) {
 
         setData.losers.forEach(loser => {
             let result = createResult(false);
-            admin.database().ref("results-v2").child(loser).push(result);
-            console.log("loser result: " + JSON.stringify(result));
+            let pushId = admin.database().ref("results-v2").child(loser).push(result);
+            console.log("loser result: " + pushId + " " + JSON.stringify(result));
         });
         setData.winners.forEach(winner => {
             let result = createResult(true);
-            admin.database().ref("results-v2").child(winner).push(result);
-            console.log("winner result: " + JSON.stringify(result));
+            let pushId = admin.database().ref("results-v2").child(winner).push(result);
+            console.log("winner result: " + pushId + " " + JSON.stringify(result));
         });
 
 
@@ -131,9 +138,10 @@ async function createResultFromSet(setId, setData, groupId) {
             let result = {
                 "setId": setId, "date": index.fmt(newDate),
                 "timestamp": setData.timestamp,
+                "winners": setData.winners, "losers": setData.losers,
                 "winningScore": setData.winningScore, "losingScore": setData.losingScore,
                 victor: victor, "winnerUtr": winnerUtr, "loserUtr": loserUtr, "group": groupId,
-                "matchRating": calculateMatchRating(victor, setData.winningScore, setData.losingScore, winnerUtr, loserUtr),
+                "matchRating": calculateMatchRating(victor, setData.winningScore, setData.losingScore, winnerUtr, loserUtr, setData.winnersServedFirst),
             };
             return result;
         }

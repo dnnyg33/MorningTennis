@@ -4,7 +4,6 @@ const index = require('./index.js')
 
 async function runSort(original, groupId, weekName) {
     let groups = await tennisSort(original, groupId)
-    console.log("groups: " + JSON.stringify(groups))
     admin.database().ref("sorted-v6").child(groupId).child("fullAvailability").child(weekName).set(groups)
     return groups;
 }
@@ -43,7 +42,6 @@ async function tennisSort(data, groupId) {
             }
         }
 
-        console.log("sortedListMap: " + JSON.stringify(daysMap))
         return daysMap;
     })
 

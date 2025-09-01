@@ -1,3 +1,7 @@
+const functions = require("firebase-functions");
+const admin = require("firebase-admin");
+module.exports.addPlayersToResults = addPlayersToResults
+
 
 exports.migrateToSetsV2 = functions.https.onRequest(async (req, res) => {
     const groupId = req.query["groupId"];
@@ -79,3 +83,27 @@ exports.populateUtrIfEmpty = functions.https.onRequest(async (req, res) => {
     });
     res.end("Done");
 })
+
+async function addPlayersToResults(req, res) {
+    // function getHydratedResultsForUser(firebaseId, page, pageSize) {
+    var results = []
+    await admin.database().ref("results-v2").once('value', async (snapshot) => {
+        const data = snapshot.val()
+        for (const [key, resultGroupForUser] of Object.entries(data)) {
+            for(const [key1, result] of Object.entries(resultGroupForUser)){
+                //lookup set
+                const set = await admin.database().ref("sets-v2").child(result.group).child(result.setId).once('value')
+                const setData = set.val()
+                if (setData == null) {
+                    console.log("No set found for path " + result.group + "/" + result.setId)
+                    continue
+                }
+                result.winners = setData.winners
+                result.losers = setData.losers
+                console.log("Adding players to path: " + key + "/" + key1)
+                admin.database().ref("results-v2").child(key).child(key1).set(result)
+            }
+        }
+        });
+        res.end("Done")
+}

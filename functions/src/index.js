@@ -7,6 +7,9 @@ const sortingWhenIsGood = require("./sorting-whenisgood.js")
 const notifications = require("./notifications.js")
 const crud = require("./crud.js")
 const utr = require("./utr_updates.js")
+const dbScripts = require("./databaseScripts.js")
+// const express = require("express");
+// const app = express();
 module.exports.dayOfWeekAsInteger = dayOfWeekAsInteger;
 module.exports.shortenedName = shortenedName;
 module.exports.removeDuplicates = removeDuplicates;
@@ -15,13 +18,23 @@ module.exports.buildDynamicDaysMap = buildDynamicDaysMap
 module.exports.fmt = fmt
 
 admin.initializeApp()
+// app.use(express.json());
 
 // // Create and Deploy Your First Cloud Functions
 // // https://firebase.google.com/docs/functions/write-firebase-functions
 //
 
+
 exports.sortWeekAfterAlgoChange = functions.database.ref("/groups-v2/{groupId}/sortingAlgorithm").onWrite(async (snapshot, context) => {
     const groupId = context.params.groupId;
+    
+     // Check if the group exists
+     const groupSnapshot = await admin.database().ref(`/groups-v2/${groupId}`).get();
+     if (!groupSnapshot.exists()) {
+         console.log(`Group ${groupId} does not exist. Exiting function.`);
+         return null; // Exit early if the group is deleted
+     }
+
     const weekName = createNewWeekDbPath("Monday");
     const incomingSubmissionsData = (await admin.database().ref("incoming-v4").child(groupId).child(weekName).get()).val()
     await runSort(groupId, incomingSubmissionsData, weekName);
@@ -67,12 +80,12 @@ exports.lateSubmissions = functions.database.ref("late-submissions/{groupId}/{we
 })
 
 exports.onSetReported = functions.database.ref("sets-v2/{groupId}/{pushKey}").onWrite(async (snapshot, context) => {
-    //TODO create notification for players to validate
+    
     const groupId = context.params.groupId;
     const setData = snapshot.after.val();
-    const isVerified = setData.verification?.isVerified ?? false;
-    if (!isVerified) {
-        console.log("New unverified set reported")
+    const nonReviewed = setData.verification == null && setData.contestation == null;
+    if (nonReviewed) {
+        console.log("New unreviewed set reported")
         const players = setData.winners.concat(setData.losers);
         await notifications.getRegistrationTokensFromFirebaseIds(players).then((tokens) => {
             notifications.sendNotificationsToGroup({
@@ -86,15 +99,17 @@ exports.onSetReported = functions.database.ref("sets-v2/{groupId}/{pushKey}").on
             }, tokens)
         })
     } else {
-        console.log("Set already verified")
+        console.log("Set already reviewed")
     }
 })
 
 
 //adhoc function to update UTRs
 exports.requestUTRUpdate = functions.https.onRequest(async (req, res) => {
-    await utr.executeUTRUpdate();
-    return res.sendStatus(200);
+    //get groupId from path
+    const groupId = req.query["groupId"];
+    await utr.executeUTRUpdate(groupId);
+    return res.status(200).send({ "data": { "result": "success", "message": "UTR update requested" } });
 })
 
 
@@ -132,14 +147,14 @@ exports.sendRSVPUpdateNotification = functions.https.onRequest(async (req, res) 
 })
 
 //schedules updateUTR function to run at when schedule opens
-exports.scheduleUpdateUTR = functions.pubsub.schedule('5 8 * * SUN')
+exports.scheduleUpdateUTR = functions.pubsub.schedule('5 12 * * *')
     .timeZone('America/Denver')
     .onRun(async (context) => {
         await utr.executeUTRUpdate();
     })
 
 //notification each day for players
-exports.scheduleReminderNotification = functions.pubsub.schedule('20 15 * * MON-THU')
+exports.scheduleReminderNotification = functions.pubsub.schedule('0 12 * * *')
     .timeZone('America/Denver')
     .onRun(async (context) => {
         await notifications.run_scheduledToPlayReminderForAllGroups()
@@ -210,11 +225,18 @@ exports.approveSetRequest = functions.https.onRequest((req, res) => {
 exports.modifyGroupMember = functions.https.onRequest((req, res) => {
     crud.modifyGroupMember(req, res)
 })
-exports.deleteAccount = functions.https.onRequest((req, res) => {
+exports.deleteAccount = functions.https.onCall((req, res) => {
     crud.deleteAccount(req, res)
+})
+exports.deleteGroup = functions.https.onCall((req, res) => {
+    crud.deleteGroup(req, res)
 })
 exports.inviteUserToGroup = functions.https.onRequest((req, res) => {
     crud.inviteUserToGroup(req, res)
+})
+
+exports.addPlayersToResults = functions.https.onRequest(async (req, res) => {
+    await dbScripts.addPlayersToResults(req, res)
 })
 
 
@@ -229,7 +251,7 @@ async function runSort(groupId, incomingSubmissionsData, weekName) {
         }
         let algorithm = groupData.sortingAlgorithm;
         console.log("running " + algorithm + " algorithm for group: " + groupId);
-        if (groupId == "provo" || groupId == "sunpro" || groupId == "test") {
+        if (groupId == "provo" || groupId == "test") {
             sortingBalanceSkill.runSort(incomingSubmissionsData, groupId, weekName);
             sortingTimePreference.runSort(incomingSubmissionsData, groupId, weekName);
             sortingFullAvailability.runSort(incomingSubmissionsData, groupId, weekName);
@@ -354,7 +376,6 @@ function buildDynamicDaysMap(groupId) {
                 } else {
                     key = capitalizeFirstLetter(meetup.dayOfWeek) + " " + meetup.time;
                 }
-                console.log("key: " + key + "key: " + key.trim() + "keyEnd")
                 daysMap[key.trim()] = 0;
             });
         } else {
