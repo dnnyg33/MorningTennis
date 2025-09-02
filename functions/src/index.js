@@ -225,10 +225,10 @@ exports.approveSetRequest = functions.https.onRequest((req, res) => {
 exports.modifyGroupMember = functions.https.onRequest((req, res) => {
     crud.modifyGroupMember(req, res)
 })
-exports.deleteAccount = functions.https.onCall((req, res) => {
+exports.deleteAccount = functions.https.onRequest((req, res) => {
     crud.deleteAccount(req, res)
 })
-exports.deleteGroup = functions.https.onCall((req, res) => {
+exports.deleteGroup = functions.https.onRequest((req, res) => {
     crud.deleteGroup(req, res)
 })
 exports.inviteUserToGroup = functions.https.onRequest((req, res) => {
