@@ -228,8 +228,8 @@ exports.modifyGroupMember = functions.https.onRequest((req, res) => {
 exports.deleteAccount = functions.https.onRequest((req, res) => {
     crud.deleteAccount(req, res)
 })
-exports.deleteGroup = functions.https.onRequest((req, res) => {
-    crud.deleteGroup(req, res)
+exports.deleteGroup = functions.https.onCall(async (req) => {
+    crud.deleteGroup(req)
 })
 exports.inviteUserToGroup = functions.https.onRequest((req, res) => {
     crud.inviteUserToGroup(req, res)

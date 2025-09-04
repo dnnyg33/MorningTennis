@@ -314,7 +314,7 @@ async function approveJoinRequest(req, res) {
                 admin.database().ref("approvedNumbers").child(joinRequest.userId).child("groups").set(userGroups)
                 res.send({ "data": { "result": "success", "userGroups": userGroups } })
             }
-            
+
             console.log("create member_ranking for this user")
             admin.database().ref("member_rankings").child(body.groupId).child(joinRequest.userId).set({ "utr": 4, "goodwill": 1 })
 
@@ -536,31 +536,24 @@ function deleteAccount(req, res) {
     });
 };
 
-async function deleteGroup(req, res) {
-  try {
-    const body = req.body?.data || {};
-    const { groupId, adminId } = body;
-    console.log("Deleting group:", groupId, "by admin:", adminId);
-
-    if (!groupId || !adminId) {
-      return res.status(400).json({ data: { result: 'failure', reason: 'missing groupId/adminId' } });
-    }
-
+async function deleteGroup({ groupId, adminId }) {
     const db = admin.database();
     const removedLog = [];
+    console.log("deleteGroup called with groupId: " + groupId + " adminId: " + adminId)
 
-    // 1) Fetch & validate first (no writes yet)
+    if (!groupId || !adminId) {
+        return { result: 'failure', reason: 'missing groupId/adminId' };
+    }
+
+    // 1) Fetch & validate
     const groupSnap = await db.ref('groups-v2').child(groupId).once('value');
     const group = groupSnap.val();
 
     if (!group) {
-        console.log("Group not found");
-      return res.status(404).json({ data: { result: 'failure', reason: 'group not found' } });
+        return { result: 'failure', reason: 'group not found' };
     }
-
     if (!group.admins || !Object.values(group.admins).includes(adminId)) {
-        console.log("User is not an admin");
-      return res.status(403).json({ data: { result: 'failure', reason: 'user is not admin' } });
+        return { result: 'failure', reason: 'user is not admin' };
     }
 
     // 2) Stage writes
@@ -568,61 +561,49 @@ async function deleteGroup(req, res) {
 
     // remove group
     tasks.push(
-      db.ref('groups-v2').child(groupId).remove().then(() => {
-        removedLog.push(`groups-v2.${groupId}`);
-      })
+        db.ref('groups-v2').child(groupId).remove().then(() => {
+            removedLog.push(`groups-v2.${groupId}`);
+        })
     );
 
-    // remove member rankings (note: your code used "member_rankings" but logged "member_ranking")
+    // remove member rankings
     tasks.push(
-      db.ref('member_rankings').child(groupId).remove().then(() => {
-        removedLog.push(`member_rankings.${groupId}`);
-      })
+        db.ref('member_rankings').child(groupId).remove().then(() => {
+            removedLog.push(`member_rankings.${groupId}`);
+        })
     );
 
-    // remove join requests
+    // remove join requests (simplified)
     tasks.push(
-      db.ref('joinRequests').child(groupId).once('value').then((snap) => {
-        const val = snap.val();
-        if (!val) return;
-        const updates = {};
-        for (const key of Object.keys(val)) {
-          updates[`joinRequests/${groupId}/${key}`] = null;
-          removedLog.push(`joinRequests.${key}`);
-        }
-        if (Object.keys(updates).length) {
-          return db.ref().update(updates);
-        }
-      })
+        db.ref('joinRequests').child(groupId).remove().then(() => {
+            removedLog.push(`joinRequests.${groupId}`);
+        })
     );
 
     // remove group from all users
     tasks.push(
-      db.ref('approvedNumbers').once('value').then((snap) => {
-        const users = snap.val() || {};
-        const updates = {};
-        for (const [uid, user] of Object.entries(users)) {
-          const groups = Array.isArray(user.groups) ? user.groups : [];
-          if (groups.includes(groupId)) {
-            const newGroups = groups.filter((g) => g !== groupId);
-            updates[`approvedNumbers/${uid}/groups`] = newGroups;
-            removedLog.push(`approvedNumbers.${uid}.groups.${groupId}`);
-          }
-        }
-        if (Object.keys(updates).length) {
-          return db.ref().update(updates);
-        }
-      })
+        db.ref('approvedNumbers').once('value').then((snap) => {
+            const users = snap.val() || {};
+            const updates = {};
+            for (const [uid, user] of Object.entries(users)) {
+                const groups = Array.isArray(user.groups) ? user.groups : [];
+                if (groups.includes(groupId)) {
+                    const newGroups = groups.filter((g) => g !== groupId);
+                    updates[`approvedNumbers/${uid}/groups`] = newGroups;
+                    removedLog.push(`approvedNumbers.${uid}.groups.${groupId}`);
+                }
+            }
+            if (Object.keys(updates).length) {
+                return db.ref().update(updates);
+            }
+        })
     );
 
-    // 3) Execute & respond once
+    // 3) Execute
     await Promise.all(tasks);
-    return res.json({ data: { result: 'success', log: removedLog } });
-  } catch (err) {
-    console.error(err);
-    return res.status(500).json({ data: { result: 'failure', reason: 'internal error' } });
-  }
+    return { result: 'success', log: removedLog };
 }
+
 
 function processLateSubmission(snapshot, writeLocation) {
     const original = snapshot.after.val()
