@@ -16,6 +16,7 @@ module.exports.removeDuplicates = removeDuplicates;
 module.exports.removeEmptyDays = removeEmptyDays;
 module.exports.buildDynamicDaysMap = buildDynamicDaysMap
 module.exports.fmt = fmt
+module.exports.sanitizeUserIdToFirebaseId = sanitizeUserIdToFirebaseId
 
 admin.initializeApp()
 // app.use(express.json());
@@ -26,14 +27,24 @@ admin.initializeApp()
 
 
 exports.sortWeekAfterAlgoChange = functions.database.ref("/groups-v2/{groupId}/sortingAlgorithm").onWrite(async (snapshot, context) => {
+    const before = snapshot.before.val();
+    const after = snapshot.after.val();
+
+    // 1. Ignore if the node was deleted
+    if (after === null) {
+      console.log("sortingAlgorithm deleted, skipping.");
+      return null;
+    }
+
+    // 2. Ignore if the value didn’t actually change
+    if (before === after) {
+      console.log("sortingAlgorithm unchanged, skipping.");
+      return null;
+    }
+    console.log(
+      `sortingAlgorithm for group ${context.params.groupId} changed from ${before} to ${after}`
+    );
     const groupId = context.params.groupId;
-    
-     // Check if the group exists
-     const groupSnapshot = await admin.database().ref(`/groups-v2/${groupId}`).get();
-     if (!groupSnapshot.exists()) {
-         console.log(`Group ${groupId} does not exist. Exiting function.`);
-         return null; // Exit early if the group is deleted
-     }
 
     const weekName = createNewWeekDbPath("Monday");
     const incomingSubmissionsData = (await admin.database().ref("incoming-v4").child(groupId).child(weekName).get()).val()
@@ -237,6 +248,9 @@ exports.inviteUserToGroup = functions.https.onRequest((req, res) => {
 
 exports.addPlayersToResults = functions.https.onRequest(async (req, res) => {
     await dbScripts.addPlayersToResults(req, res)
+})
+exports.migrateAdminIdsToFirebaseIds = functions.https.onRequest(async (req, res) => {
+    await dbScripts.migrateAdminIdsToFirebaseIds(req, res)
 })
 
 
@@ -485,4 +499,22 @@ function fmt(date, format = 'YYYY-MM-DDThh:mm:ss') {
 
 function capitalizeFirstLetter(string) {
     return string.charAt(0).toUpperCase() + string.slice(1);
+}
+
+async function sanitizeUserIdToFirebaseId(id) {
+    if (id.length > 10) {
+        return id
+    }
+    console.log("Found publicId: " + id + ", looking up firebaseId");
+    const snapshot = await admin.database().ref('approvedNumbers').once('value')
+
+    const users = snapshot.val()
+    for (const [key, user] of Object.entries(users)) {
+        if (user.phoneNumber == id) {
+            console.log("Converted adminId " + id + "to firebaseId " + key)
+            return key
+        }
+    }
+    console.log("No firebaseId found for adminId: " + id)
+    return null
 }
