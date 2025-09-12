@@ -2,7 +2,8 @@ const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const index = require('./index.js')
 const notifications = require('./notifications.js')
-const utr = require('./utr_updates.js')
+const utr = require('./utr_updates.js');
+const { schedule } = require("firebase-functions/v1/pubsub");
 module.exports.processLateSubmission = processLateSubmission;
 module.exports.createUser = createUser;
 module.exports.joinGroupRequest = joinGroupRequest;
@@ -13,6 +14,7 @@ module.exports.modifyGroupMember = modifyGroupMember;
 module.exports.inviteUserToGroup = inviteUserToGroup;
 module.exports.deleteAccount = deleteAccount;
 module.exports.deleteGroup = deleteGroup;
+module.exports.createGroup = createGroup;
 
 
 /**
@@ -536,13 +538,65 @@ function deleteAccount(req, res) {
     });
 };
 
-async function deleteGroup({ groupId, adminId }) {
+async function createGroup(req, res) {
+    const body = req.body;
+    console.log("body: " + JSON.stringify(body))
+    if (body.group == null || body.firebaseId == null || body.publicUserId == null) {
+        res.status(400).send({ "data": { "result": "failure", "reason": "group, firebaseId and publicUserId are required" } })
+        return;
+    }
+    //validate properties on group
+    if (body.group.name == null || body.group.id == null || body.group.scheduleIsOpen == null
+        || body.group.visibility == null || body.group.meetups2 == null || body.group.sortingAlgorithm == null
+    ) {
+        res.status(400).send({ "data": { "result": "failure", "reason": "group.name, group.id, group.scheduleIsOpen, group.visibility, group.meetups2 and group.sortingAlgorithm are required" } })
+        return;
+    }
+    //inspect that all meetups2 are valid
+    const validDays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
+    for (const meetup of body.group.meetups2) {
+        if (meetup.dayOfWeek == null || meetup.dayOfWeek < 0 || meetup.dayOfWeek > 6 || !validDays.includes(meetup.dayOfWeek)) {
+            res.status(400).send({ "data": { "result": "failure", "reason": "all meetups2 must valid dayOfWeek" } })
+            return;
+        }
+    }
+
+    const newGroup = {
+        name: body.group.name,
+        id: body.group.id,
+        description: body.group.description,
+        location: body.group.location,
+        visibility: body.group.visibility,
+        dateCreated: new Date().getTime(),
+        admins: { 'creator': body.firebaseId },
+        scheduleIsOpen: body.group.scheduleIsOpen,
+        code: body.group.code,
+        sortingAlgorithm: body.group.sortingAlgorithm,
+        memberCount: 1,
+        meetups2: body.group.meetups2,
+    }
+    const newGroupRef = admin.database().ref("groups-v2").child(body.group.id).set(newGroup);
+    //add group to user's list of groups
+    await admin.database().ref("approvedNumbers").child(body.firebaseId).child('groups').once('value').then((snapshot) => {
+        const groups = snapshot.val() || [];
+        groups.push(body.group.id);
+        console.log("groups: " + JSON.stringify(groups))
+        return admin.database().ref("approvedNumbers").child(body.firebaseId).child('groups').set(groups);
+    });
+    //create member_ranking for this user
+    await admin.database().ref("member_rankings").child(body.group.id).child(body.publicUserId).set({ "utr": 4, "goodwill": 1, 'suspended': false });
+    res.status(200).send({ "data": { "result": "success", "groupId": body.group.id, "group": newGroup } })
+}
+
+async function deleteGroup(req, res) {
     const db = admin.database();
     const removedLog = [];
+    const groupId = req.body.groupId;
+    const adminId = req.body.adminId;
     console.log("deleteGroup called with groupId: " + groupId + " adminId: " + adminId)
 
     if (!groupId || !adminId) {
-        return { result: 'failure', reason: 'missing groupId/adminId' };
+        return res.status(400).send({ result: 'failure', reason: 'missing groupId/adminId' });
     }
 
     // 1) Fetch & validate
@@ -550,10 +604,10 @@ async function deleteGroup({ groupId, adminId }) {
     const group = groupSnap.val();
 
     if (!group) {
-        return { result: 'failure', reason: 'group not found' };
+        return res.status(404).send({ result: 'failure', reason: 'group not found' });
     }
     if (!group.admins || !Object.values(group.admins).includes(adminId)) {
-        return { result: 'failure', reason: 'user is not admin' };
+        return res.status(403).send({ result: 'failure', reason: 'user is not admin' });
     }
 
     // 2) Stage writes
@@ -601,7 +655,7 @@ async function deleteGroup({ groupId, adminId }) {
 
     // 3) Execute
     await Promise.all(tasks);
-    return { result: 'success', log: removedLog };
+    return res.status(200).send({ result: 'success', log: removedLog });
 }
 
 

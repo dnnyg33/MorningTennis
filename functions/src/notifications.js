@@ -7,6 +7,7 @@ module.exports.getRegistrationTokensFromFirebaseIds = getRegistrationTokensFromF
 
 const admin = require("firebase-admin");
 const index = require("./index.js")
+const utilities = require("./utilities.js");
 
 async function run_markNotComingNotification(data, res) {
     console.log("run_rsvpNotification:data " + JSON.stringify(data))
@@ -28,7 +29,7 @@ async function run_markNotComingNotification(data, res) {
     const dayName = data.dayName
     const today = new Date()
     const offsetHours = data.offsetHours ? data.offsetHours : -6
-    const dayNumber = index.dayOfWeekAsInteger(dayName)
+    const dayNumber = utilities.dayOfWeekAsInteger(dayName)
     //if rsvp is in the past, just break
     if (dayNumber < new Date().getDay()) {
         return;

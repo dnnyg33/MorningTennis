@@ -1,6 +1,7 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 const index = require("./index");
+const utilities = require("./utilities.js");
 module.exports.createResultFromSet = createResultFromSet
 module.exports.executeUTRUpdate = executeUTRUpdate
 
@@ -134,9 +135,9 @@ async function createResultFromSet(setId, setData, groupId) {
 
         function createResult(victor) {
             const newDate = new Date(setData.weekName);
-            newDate.setDate(newDate.getDate() + ((index.dayOfWeekAsInteger(setData.dayName) + 6) % 7));
+            newDate.setDate(newDate.getDate() + ((utilities.dayOfWeekAsInteger(setData.dayName) + 6) % 7));
             let result = {
-                "setId": setId, "date": index.fmt(newDate),
+                "setId": setId, "date": utilities.fmt(newDate),
                 "timestamp": setData.timestamp,
                 "winners": setData.winners, "losers": setData.losers,
                 "winningScore": setData.winningScore, "losingScore": setData.losingScore,
