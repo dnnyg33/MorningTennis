@@ -165,35 +165,27 @@ exports.api = functions.https.onRequest(app);
  *  Triggers (unchanged)
  * --------------------------- */
 
-exports.sortWeekAfterAlgoChange = functions.database.ref("/groups-v2/{groupId}/sortingAlgorithm").onWrite(async (snapshot, context) => {
-    const before = snapshot.before.val();
-    const after = snapshot.after.val();
-
-    // 1. Ignore if the node was deleted
-    if (after === null) {
-      console.log("sortingAlgorithm deleted, skipping.");
-      return null;
-    }
-
-    // 2. Ignore if the value didn’t actually change
-    if (before === after) {
-      console.log("sortingAlgorithm unchanged, skipping.");
-      return null;
-    }
-    console.log(
-      `sortingAlgorithm for group ${context.params.groupId} changed from ${before} to ${after}`
-    );
-    const groupId = context.params.groupId;
 exports.sortWeekAfterAlgoChange = functions.database
     .ref("/groups-v2/{groupId}/sortingAlgorithm")
     .onWrite(async (snapshot, context) => {
-        const groupId = context.params.groupId;
+        const before = snapshot.before.val();
+        const after = snapshot.after.val();
 
-        const groupSnapshot = await admin.database().ref(`/groups-v2/${groupId}`).get();
-        if (!groupSnapshot.exists()) {
-            console.log(`Group ${groupId} does not exist. Exiting function.`);
+        // 1. Ignore if the node was deleted
+        if (after === null) {
+            console.log("sortingAlgorithm deleted, skipping.");
             return null;
         }
+
+        // 2. Ignore if the value didn’t actually change
+        if (before === after) {
+            console.log("sortingAlgorithm unchanged, skipping.");
+            return null;
+        }
+        console.log(
+            `sortingAlgorithm for group ${context.params.groupId} changed from ${before} to ${after}`
+        );
+        const groupId = context.params.groupId;
 
         const weekName = createNewWeekDbPath("Monday");
         const incomingSubmissionsData = (
@@ -225,7 +217,7 @@ exports.lateSubmissions = functions.database
     });
 
 exports.onSetReported = functions.database.ref("sets-v2/{groupId}/{pushKey}").onWrite(async (snapshot, context) => {
-    
+
     const groupId = context.params.groupId;
     const setData = snapshot.after.val();
     const nonReviewed = setData.verification == null && setData.contestation == null;
@@ -249,47 +241,6 @@ exports.onSetReported = functions.database.ref("sets-v2/{groupId}/{pushKey}").on
 })
 
 
-//adhoc function to update UTRs
-exports.requestUTRUpdate = functions.https.onRequest(async (req, res) => {
-    //get groupId from path
-    const groupId = req.query["groupId"];
-    await utr.executeUTRUpdate(groupId);
-    return res.status(200).send({ "data": { "result": "success", "message": "UTR update requested" } });
-})
-
-
-exports.logout = functions.https.onRequest((req, res) => {
-    console.log("logout function called")
-    console.log("req.body.data: " + JSON.stringify(req.body.data))
-    let body = req.body.data
-    if (body.firebaseId == null) {
-        res.status(400).send("firebaseId is required")
-        return
-    }
-    if (body.deviceName == null) {
-        res.status(400).send("deviceName is required")
-        return
-    }
-    admin.database().ref("approvedNumbers").child(body.firebaseId).child("tokens").child(body.deviceName).remove().then(() => {
-
-        res.status(200).send({ "data": { "result": "success", "message": "logout successful" } })
-    }).catch((error) => {
-        console.log("error: " + error)
-        res.status(400).send({ "data": { "result": "error", "message": error } })
-    })
-})
-
-
-//A notification for an alternate who has been promoted to player due to an RSVP event or for a last minute change.
-exports.sendRSVPUpdateNotification = functions.https.onRequest(async (req, res) => {
-    console.log("run_rsvpNotification:body " + JSON.stringify(req.body))
-    let firebaseIds = await notifications.run_markNotComingNotification(req.body.data, res)
-    if (firebaseIds != null) {
-        res.status(200).send({ "data": { "result": "success", "message": "notification sent to " + JSON.stringify(firebaseIds) } })
-    } else {
-        res.status(200).send({ "data": { "result": "success", "message": "no firebaseIds found" } })
-    }
-})
 
 //schedules updateUTR function to run at when schedule opens
 exports.scheduleUpdateUTR = functions.pubsub.schedule('5 12 * * *')
@@ -437,173 +388,83 @@ function run_openScheduleCommand() {
     }
 }
 
-// function consolidateMeetups(meetupsListMap) {
-//     let weekOptions = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-//     weekOptions.forEach(day => {
-//         //if there are any meetups for this day, leave them alone.
-//         for (const [key, meetupsMap] of Object.entries(meetupsListMap)) {
-
-//         if (key.contains(day) && meetupsMap != 0) {
-//             continue
-//         } else {
-//             //else remove all empty meetups for this day and add new single day to consolidatedMeetups
-//             let consolidatedMeetups = {};
-//             if (meetupsMap != 0) {
-//                 consolidatedMeetups[key] = meetupsMap;
-//             }
-//         }
-//         //else remove all empty meetups for this day and add new single day to consolidatedMeetups
-//     let consolidatedMeetups = {};
-
-//         if (meetupsMap != 0) {
-//             consolidatedMeetups[key] = meetupsMap;
+//adhoc function to update UTRs
+exports.requestUTRUpdate = functions.https.onRequest(async (req, res) => {
+    //get groupId from path
+    const groupId = req.query["groupId"];
+    await utr.executeUTRUpdate(groupId);
+    return res.status(200).send({ "data": { "result": "success", "message": "UTR update requested" } });
+})
 
 
-//         for (const [key, meetups] of Object.entries(meetupsMap)) {
-//             consolidatedMeetups = consolidatedMeetups.concat(meetups);
-//         }
-//     }
-
-
-
-
-function buildDynamicDaysMap(groupId) {
-    return admin.database().ref("groups-v2").child(groupId).child("meetups2").get().then((snapshot) => {
-        if (snapshot.exists()) {
-            daysMap = {};
-            let meetups = snapshot.val();
-            meetups.forEach(meetup => {
-                let key = ""
-                if (meetup.time == null) {
-                    key = capitalizeFirstLetter(meetup.dayOfWeek);
-                } else {
-                    key = capitalizeFirstLetter(meetup.dayOfWeek) + " " + meetup.time;
-                }
-                daysMap[key.trim()] = 0;
-            });
-        } else {
-            console.log("No data available");
-            let daysMap = { "Monday": 0, "Tuesday": 0, "Wednesday": 0, "Thursday": 0, "Friday": 0 }
-        }
-        return daysMap;
-    });
-}
-
-
-Date.prototype.addDays = function (d) { return new Date(this.valueOf() + 864E5 * d); };
-function createNewWeekDbPath(weekStartDay) {
-    let startDayInt = dayOfWeekAsInteger(weekStartDay); //5
-    let now = new Date();
-    // now.setDate(now.getDate()-5)//for testing only
-    let diff = ((startDayInt + 7) - now.getDay()) % 7; //5
-    let startDate = now.addDays(diff);
-    let path = weekStartDay + fmt(startDate, "-M-D-YYYY");
-    return path;
-}
-
-/**
-*
-* @method dayOfWeekAsInteger
-* @param {String} day
-* @return {Number} Returns day as number
-*/
-function dayOfWeekAsInteger(day) {
-    return ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].indexOf(day);
-}
-
-Array.prototype.sortBy = function (callback) {
-    return this.sort((a, b) => callback(b) - callback(a))
-}
-
-Array.prototype.sum = function () {
-    return this.reduce(function (a, b) { return a + b });
-};
-
-Array.prototype.avg = function () {
-    return this.sum() / this.length;
-};
-
-const removeNullUndefined = obj => Object.entries(obj).filter(([_, v]) => v != null).reduce((acc, [k, v]) => ({ ...acc, [k]: v }), {});
-
-
-function shortenedName(name) {
-    var parts = name.split(" ");
-    switch (parts.length) {
-        case 1:
-            return this;
-        case 2:
-            return `${parts[0]} ${parts[1].substring(0, 1)}.`;
-        case 3:
-            return `${parts[0]} ${parts[1].substring(0, 1)} ${parts[2]}`;
+exports.logout = functions.https.onRequest((req, res) => {
+    console.log("logout function called")
+    console.log("req.body.data: " + JSON.stringify(req.body.data))
+    let body = req.body.data
+    if (body.firebaseId == null) {
+        res.status(400).send("firebaseId is required")
+        return
     }
-}
-
-function removeDuplicates(data) {
-    var firebaseId = []
-    var uniquePlayers = []
-    //iterate through data 
-    for (const [key, item] of Object.entries(data)) {
-        let cleanNumber = item.firebaseId
-        if (firebaseId.includes(cleanNumber)) {
-            console.log("duplicate entry for: " + cleanNumber)
-            uniquePlayers = uniquePlayers.filter(f => cleanNumber !== f.firebaseId)
-        }
-        item.scheduledDays = 0
-        firebaseId.push(cleanNumber)
-        uniquePlayers.push(item)
-
-
+    if (body.deviceName == null) {
+        res.status(400).send("deviceName is required")
+        return
     }
-    return uniquePlayers
-}
+    admin.database().ref("approvedNumbers").child(body.firebaseId).child("tokens").child(body.deviceName).remove().then(() => {
 
-//todo: this function can be removed once app versions are above 28
-function removeEmptyDays(result) {
-    //remove days where value is 0
-    const v5Result = {}
-    for (const [key, value] of Object.entries(result)) {
-        if (value != 0) {
-            v5Result[key] = value
-        }
+        res.status(200).send({ "data": { "result": "success", "message": "logout successful" } })
+    }).catch((error) => {
+        console.log("error: " + error)
+        res.status(400).send({ "data": { "result": "error", "message": error } })
+    })
+})
+
+
+//A notification for an alternate who has been promoted to player due to an RSVP event or for a last minute change.
+exports.sendRSVPUpdateNotification = functions.https.onRequest(async (req, res) => {
+    console.log("run_rsvpNotification:body " + JSON.stringify(req.body))
+    let firebaseIds = await notifications.run_markNotComingNotification(req.body.data, res)
+    if (firebaseIds != null) {
+        res.status(200).send({ "data": { "result": "success", "message": "notification sent to " + JSON.stringify(firebaseIds) } })
+    } else {
+        res.status(200).send({ "data": { "result": "success", "message": "no firebaseIds found" } })
     }
-    return v5Result;
-}
+})
 
-function fmt(date, format = 'YYYY-MM-DDThh:mm:ss') {
-    const pad2 = (n) => n.toString().padStart(2, '0');
 
-    const map = {
-        YYYY: date.getFullYear(),
-        MM: pad2(date.getMonth() + 1),
-        DD: pad2(date.getDate()),
-        hh: pad2(date.getHours()),
-        mm: pad2(date.getMinutes()),
-        ss: pad2(date.getSeconds()),
-        M: date.getMonth() + 1,
-        D: date.getDate(),
-    };
-
-    return Object.entries(map).reduce((prev, entry) => prev.replace(...entry), format);
-}
-
-function capitalizeFirstLetter(string) {
-    return string.charAt(0).toUpperCase() + string.slice(1);
-}
-
-async function sanitizeUserIdToFirebaseId(id) {
-    if (id.length > 10) {
-        return id
-    }
-    console.log("Found publicId: " + id + ", looking up firebaseId");
-    const snapshot = await admin.database().ref('approvedNumbers').once('value')
-
-    const users = snapshot.val()
-    for (const [key, user] of Object.entries(users)) {
-        if (user.phoneNumber == id) {
-            console.log("Converted adminId " + id + "to firebaseId " + key)
-            return key
-        }
-    }
-    console.log("No firebaseId found for adminId: " + id)
-    return null
-}
+///CRUD
+module.exports.createUser = functions.https.onRequest((req, res) => {
+    crud.createUser(req, res)
+})
+exports.joinGroupRequest = functions.https.onRequest((req, res) => {
+    console.log("Join group request")
+    crud.joinGroupRequest(req, res)
+})
+exports.toggleAdmin = functions.https.onRequest((req, res) => {
+    crud.toggleAdmin(req, res)
+})
+exports.approveJoinRequest = functions.https.onRequest((req, res) => {
+    console.log("Approve join request")
+    crud.approveJoinRequest(req, res)
+})
+exports.approveSetRequest = functions.https.onRequest((req, res) => {
+    console.log("Approve set request")
+    crud.approveSetRequest(req, res)
+})
+exports.modifyGroupMember = functions.https.onRequest((req, res) => {
+    crud.modifyGroupMember(req, res)
+})
+exports.deleteAccount = functions.https.onRequest((req, res) => {
+    crud.deleteAccount(req, res)
+})
+exports.deleteGroup = functions.https.onCall(async (req) => {
+    crud.deleteGroup(req)
+})
+exports.inviteUserToGroup = functions.https.onRequest((req, res) => {
+    crud.inviteUserToGroup(req, res)
+})
+exports.addPlayersToResults = functions.https.onRequest(async (req, res) => {
+    await dbScripts.addPlayersToResults(req, res)
+})
+exports.migrateAdminIdsToFirebaseIds = functions.https.onRequest(async (req, res) => {
+    await dbScripts.migrateAdminIdsToFirebaseIds(req, res)
+})
