@@ -51,29 +51,17 @@ app.use((req, res, next) => {
 
 // JSON body parsing for all routes
 app.use(express.json());
+// v1 routes
+const v1 = express.Router();
+const v2 = express.Router();
 
-/** ---------------------------
- *  ROUTES (migrated from https.onRequest)
- *  Prefix all paths with /api when calling
- * --------------------------- */
 
 // Simple health
-app.get("/health", (_req, res) => res.json({ ok: true }));
-
-// Previously: exports.testFailure
-app.post("/testFailure", async (req, res) => {
-    console.log("testFailure");
-    res.status(500).send("testFailure");
-});
-
-// Previously: exports.testSuccess
-app.post("/testSuccess", (req, res) => {
-    console.log("testSuccess body:", req.body);
-    res.status(200).send("testSuccess");
-});
+v1.get("/health", (_req, res) => res.json({ ok: true, version: "v1" }));
+v2.get("/health", (_req, res) => res.json({ ok: true, version: "v2" }));
 
 // Previously: exports.testSort
-app.post("/testSort", async (req, res) => {
+v1.post("/testSort", async (req, res) => {
     try {
         const groupId = req.query["groupId"];
         const weekName = req.query["weekName"];
@@ -93,7 +81,7 @@ app.post("/testSort", async (req, res) => {
 });
 
 // Previously: exports.requestUTRUpdate
-app.post("/requestUTRUpdate", async (req, res) => {
+v1.post("/requestUTRUpdate", async (req, res) => {
     try {
         const groupId = req.query["groupId"];
         await utr.executeUTRUpdate(groupId);
@@ -105,7 +93,7 @@ app.post("/requestUTRUpdate", async (req, res) => {
 });
 
 // Previously: exports.logout
-app.post("/logout", async (req, res) => {
+v1.post("/logout", async (req, res) => {
     try {
         console.log("logout function called");
         let body = req.body?.data ?? {};
@@ -127,7 +115,7 @@ app.post("/logout", async (req, res) => {
 });
 
 // Previously: exports.sendRSVPUpdateNotification
-app.post("/sendRSVPUpdateNotification", async (req, res) => {
+v1.post("/sendRSVPUpdateNotification", async (req, res) => {
     console.log("run_rsvpNotification:body", JSON.stringify(req.body));
     const firebaseIds = await notifications.run_markNotComingNotification(req.body.data, res);
     if (firebaseIds != null) {
@@ -140,29 +128,35 @@ app.post("/sendRSVPUpdateNotification", async (req, res) => {
 });
 
 // Previously: exports.addPlayersToResults
-app.post("/db/addPlayersToResults", async (req, res) => {
+v1.post("/db/addPlayersToResults", async (req, res) => {
     await dbScripts.addPlayersToResults(req, res);
 });
 
 /** ---- CRUD routes (were individual https.onRequest functions) ---- */
-app.post("/createUser", (req, res) => crud.createUser(req, res));
-app.post("/joinGroupRequest", (req, res) => {
+v1.post("/createUser", (req, res) => crud.createUser(req, res));
+v1.post("/joinGroupRequest", (req, res) => {
     console.log("Join group request");
     crud.joinGroupRequest(req, res);
 });
-app.post("/toggleAdmin", (req, res) => crud.toggleAdmin(req, res));
-app.post("/approveJoinRequest", (req, res) => {
+v1.post("/toggleAdmin", (req, res) => crud.toggleAdmin(req, res));
+v1.post("/approveJoinRequest", (req, res) => {
     console.log("Approve join request");
     crud.approveJoinRequest(req, res);
 });
-app.post("/approveSetRequest", (req, res) => {
+v1.post("/approveSetRequest", (req, res) => {
     console.log("Approve set request");
     crud.approveSetRequest(req, res);
 });
-app.post("/modifyGroupMember", (req, res) => crud.modifyGroupMember(req, res));
-app.post("/deleteAccount", (req, res) => crud.deleteAccount(req, res));
-app.post("/deleteGroup", (req, res) => crud.deleteGroup(req, res));
-app.post("/inviteUserToGroup", (req, res) => crud.inviteUserToGroup(req, res));
+v1.post("/modifyGroupMember", (req, res) => crud.modifyGroupMember(req, res));
+v1.post("/deleteAccount", (req, res) => crud.deleteAccount(req, res));
+v1.post("/deleteGroup", (req, res) => crud.deleteGroup(req, res));
+v1.post("/createGroup", (req, res) => crud.createGroup(req, res));
+v1.post("/inviteUserToGroup", (req, res) => crud.inviteUserToGroup(req, res));
+
+
+// mount versions
+app.use("/v1", v1);
+app.use("/v2", v2);
 
 /** Export ONE HTTP function */
 exports.api = functions.https.onRequest(app);
@@ -385,32 +379,85 @@ function run_openScheduleCommand() {
     }
 }
 
-// function consolidateMeetups(meetupsListMap) {
-//     let weekOptions = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-//     weekOptions.forEach(day => {
-//         //if there are any meetups for this day, leave them alone.
-//         for (const [key, meetupsMap] of Object.entries(meetupsListMap)) {
-
-//         if (key.contains(day) && meetupsMap != 0) {
-//             continue
-//         } else {
-//             //else remove all empty meetups for this day and add new single day to consolidatedMeetups
-//             let consolidatedMeetups = {};
-//             if (meetupsMap != 0) {
-//                 consolidatedMeetups[key] = meetupsMap;
-//             }
-//         }
-//         //else remove all empty meetups for this day and add new single day to consolidatedMeetups
-//     let consolidatedMeetups = {};
-
-//         if (meetupsMap != 0) {
-//             consolidatedMeetups[key] = meetupsMap;
+/// Version 0. Delete after app release and force of all clients
+//adhoc function to update UTRs
+exports.requestUTRUpdate = functions.https.onRequest(async (req, res) => {
+    //get groupId from path
+    const groupId = req.query["groupId"];
+    await utr.executeUTRUpdate(groupId);
+    return res.status(200).send({ "data": { "result": "success", "message": "UTR update requested" } });
+})
 
 
-//         for (const [key, meetups] of Object.entries(meetupsMap)) {
-//             consolidatedMeetups = consolidatedMeetups.concat(meetups);
-//         }
-//     }
+exports.logout = functions.https.onRequest((req, res) => {
+    console.log("logout function called")
+    console.log("req.body.data: " + JSON.stringify(req.body.data))
+    let body = req.body.data
+    if (body.firebaseId == null) {
+        res.status(400).send("firebaseId is required")
+        return
+    }
+    if (body.deviceName == null) {
+        res.status(400).send("deviceName is required")
+        return
+    }
+    admin.database().ref("approvedNumbers").child(body.firebaseId).child("tokens").child(body.deviceName).remove().then(() => {
+
+        res.status(200).send({ "data": { "result": "success", "message": "logout successful" } })
+    }).catch((error) => {
+        console.log("error: " + error)
+        res.status(400).send({ "data": { "result": "error", "message": error } })
+    })
+})
+
+
+//A notification for an alternate who has been promoted to player due to an RSVP event or for a last minute change.
+exports.sendRSVPUpdateNotification = functions.https.onRequest(async (req, res) => {
+    console.log("run_rsvpNotification:body " + JSON.stringify(req.body))
+    let firebaseIds = await notifications.run_markNotComingNotification(req.body.data, res)
+    if (firebaseIds != null) {
+        res.status(200).send({ "data": { "result": "success", "message": "notification sent to " + JSON.stringify(firebaseIds) } })
+    } else {
+        res.status(200).send({ "data": { "result": "success", "message": "no firebaseIds found" } })
+    }
+})
+
+///CRUD
+module.exports.createUser = functions.https.onRequest((req, res) => {
+    crud.createUser(req, res)
+})
+exports.joinGroupRequest = functions.https.onRequest((req, res) => {
+    console.log("Join group request")
+    crud.joinGroupRequest(req, res)
+})
+exports.toggleAdmin = functions.https.onRequest((req, res) => {
+    crud.toggleAdmin(req, res)
+})
+exports.approveJoinRequest = functions.https.onRequest((req, res) => {
+    console.log("Approve join request")
+    crud.approveJoinRequest(req, res)
+})
+exports.approveSetRequest = functions.https.onRequest((req, res) => {
+    console.log("Approve set request")
+    crud.approveSetRequest(req, res)
+})
+exports.modifyGroupMember = functions.https.onRequest((req, res) => {
+    crud.modifyGroupMember(req, res)
+})
+exports.deleteAccount = functions.https.onRequest((req, res) => {
+    crud.deleteAccount(req, res)
+})
+exports.deleteGroup = functions.https.onRequest((req, res) => {
+    crud.deleteGroup(req, res)
+})
+exports.inviteUserToGroup = functions.https.onRequest((req, res) => {
+    crud.inviteUserToGroup(req, res)
+})
+exports.addPlayersToResults = functions.https.onRequest(async (req, res) => {
+    await dbScripts.addPlayersToResults(req, res)
+})
+
+
 
 
 
