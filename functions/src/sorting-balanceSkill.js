@@ -2,6 +2,7 @@
 module.exports.runSort = runSort;
 const admin = require("firebase-admin");
 const index = require('./index.js')
+const utilities = require("./utilities.js");
 
 async function runSort(incomingSubmissionsData, groupId, weekName) {
     const memberRankingsSnapshot = await admin.database().ref('member_rankings').child(groupId).get();
@@ -51,7 +52,7 @@ async function getFirebaseIdForPhoneNumber(phoneNumber) {
 async function tennisSortBySkill(incomingSubmissionsData, playerRankingInfoMap, groupId) {
     // console.log("playerRankingInfoMap: " + JSON.stringify(playerRankingInfoMap))
     console.log("incomingSubmissionsData: " + JSON.stringify(incomingSubmissionsData))
-    let uniqueData = index.removeDuplicates(incomingSubmissionsData)
+    let uniqueData = utilities.removeDuplicates(incomingSubmissionsData)
     console.log("Unique Data: " + JSON.stringify(uniqueData))
     //make a map for each day with key as name of day
     const daysAvailable = {}
@@ -88,7 +89,7 @@ async function tennisSortBySkill(incomingSubmissionsData, playerRankingInfoMap, 
 
     let weeklyMatches = {}
 
-    return await index.buildDynamicDaysMap(groupId).then((map) => {
+    return await utilities.buildDynamicDaysMap(groupId).then((map) => {
         weeklyMatches = map;
         console.log("Days Map: " + JSON.stringify(weeklyMatches))
 
@@ -146,13 +147,13 @@ async function tennisSortBySkill(incomingSubmissionsData, playerRankingInfoMap, 
             if (allPlayers.length < 4) {
                 allPlayers.forEach(x => {
                     if (x.name.substring(0, 1) != "(") {
-                        x.name = "(" + index.shortenedName(x.name) + ")"
+                        x.name = "(" + utilities.shortenedName(x.name) + ")"
                     }
                 })
                 combos = [allPlayers]
             } else {
                 allPlayers.forEach(x => {
-                    x.name = index.shortenedName(x.name)
+                    x.name = utilities.shortenedName(x.name)
                 })
                 combos = Combinations(allPlayers, 4); //item = {name: "5412078581", "utr": 5.5}
             }

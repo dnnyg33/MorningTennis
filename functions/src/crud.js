@@ -536,13 +536,15 @@ function deleteAccount(req, res) {
     });
 };
 
-async function deleteGroup({ groupId, adminId }) {
+async function deleteGroup(req, res) {
     const db = admin.database();
     const removedLog = [];
+    const groupId = req.body.groupId;
+    const adminId = req.body.adminId;
     console.log("deleteGroup called with groupId: " + groupId + " adminId: " + adminId)
 
     if (!groupId || !adminId) {
-        return { result: 'failure', reason: 'missing groupId/adminId' };
+        return res.status(400).send({ result: 'failure', reason: 'missing groupId/adminId' });
     }
 
     // 1) Fetch & validate
@@ -550,10 +552,10 @@ async function deleteGroup({ groupId, adminId }) {
     const group = groupSnap.val();
 
     if (!group) {
-        return { result: 'failure', reason: 'group not found' };
+        return res.status(404).send({ result: 'failure', reason: 'group not found' });
     }
     if (!group.admins || !Object.values(group.admins).includes(adminId)) {
-        return { result: 'failure', reason: 'user is not admin' };
+        return res.status(403).send({ result: 'failure', reason: 'user is not admin' });
     }
 
     // 2) Stage writes
@@ -601,7 +603,7 @@ async function deleteGroup({ groupId, adminId }) {
 
     // 3) Execute
     await Promise.all(tasks);
-    return { result: 'success', log: removedLog };
+    return res.status(200).send({ result: 'success', log: removedLog });
 }
 
 
