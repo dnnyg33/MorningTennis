@@ -51,7 +51,9 @@ exports.testFailure = functions.https.onRequest(async (req, res) => {
     console.log("testFailure")
     res.status(500).send("testFailure")
 })
-exports.testSuccess = functions.https.onRequest(async (req, res) => {
+exports.testSuccess = functions.https.onRequest({
+  cors: ["https://morning-tennis.web.app", "http://localhost:5001"], // or true for all origins while testing
+}, (req, res) => {
     console.log(req)
     res.status(200).send("testSuccess")
 })

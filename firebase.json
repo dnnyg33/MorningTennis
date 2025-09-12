@@ -4,7 +4,7 @@
   },
   "hosting": {
     "site": "morning-tennis",
-    "public": "web/site",
+    "public": "./web/flutter/web/",
     "ignore": [
       "firebase.json",
       "**/.*",
