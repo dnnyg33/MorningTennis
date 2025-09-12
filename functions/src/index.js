@@ -51,9 +51,22 @@ exports.testFailure = functions.https.onRequest(async (req, res) => {
     console.log("testFailure")
     res.status(500).send("testFailure")
 })
-exports.testSuccess = functions.https.onRequest({
-  cors: ["https://morning-tennis.web.app", "http://localhost:5001"], // or true for all origins while testing
-}, (req, res) => {
+exports.testSuccess = functions.https.onRequest((req, res) => {
+   // Set CORS headers
+  res.set("Access-Control-Allow-Origin", [
+    "https://morning-tennis.web.app",
+    "http://localhost:5050",
+  ].includes(req.headers.origin) ? req.headers.origin : "null");
+
+  res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.set("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.set("Vary", "Origin");
+
+  // Handle preflight
+  if (req.method === "OPTIONS") {
+    res.status(204).end();
+    return;
+  }
     console.log(req)
     res.status(200).send("testSuccess")
 })
@@ -230,8 +243,8 @@ exports.modifyGroupMember = functions.https.onRequest((req, res) => {
 exports.deleteAccount = functions.https.onRequest((req, res) => {
     crud.deleteAccount(req, res)
 })
-exports.deleteGroup = functions.https.onCall(async (req) => {
-    crud.deleteGroup(req)
+exports.deleteGroup = functions.https.onRequest((req, res) => {
+    crud.deleteGroup(req, res)
 })
 exports.inviteUserToGroup = functions.https.onRequest((req, res) => {
     crud.inviteUserToGroup(req, res)
