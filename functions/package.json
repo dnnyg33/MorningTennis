@@ -10,7 +10,7 @@
     "debug": "firebase emulators:start --inspect-functions"
   },
   "engines": {
-    "node": "18"
+    "node": "20"
   },
   "main": "src/index.js",
   "dependencies": {
