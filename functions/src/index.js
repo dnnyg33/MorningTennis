@@ -165,9 +165,7 @@ exports.api = functions.https.onRequest(app);
  *  Triggers (unchanged)
  * --------------------------- */
 
-exports.sortWeekAfterAlgoChange = functions.database
-    .ref("/groups-v2/{groupId}/sortingAlgorithm")
-    .onWrite(async (snapshot, context) => {
+exports.sortWeekAfterAlgoChange = functions.database.ref("/groups-v2/{groupId}/sortingAlgorithm").onWrite(async (snapshot, context) => {
         const before = snapshot.before.val();
         const after = snapshot.after.val();
 
@@ -194,18 +192,14 @@ exports.sortWeekAfterAlgoChange = functions.database
         await runSort(groupId, incomingSubmissionsData, weekName);
     });
 
-exports.sortWeekv6 = functions.database
-    .ref("/incoming-v4/{groupId}/{day}")
-    .onWrite(async (snapshot, context) => {
+exports.sortWeekv6 = functions.database.ref("/incoming-v4/{groupId}/{day}").onWrite(async (snapshot, context) => {
         const groupId = context.params.groupId;
         const weekName = context.params.day;
         const incomingSubmissionsData = snapshot.after.val();
         await runSort(groupId, incomingSubmissionsData, weekName);
     });
 
-exports.lateSubmissions = functions.database
-    .ref("late-submissions/{groupId}/{weekName}/{day}/{pushKey}")
-    .onWrite((snapshot, context) => {
+exports.lateSubmissions = functions.database.ref("late-submissions/{groupId}/{weekName}/{day}/{pushKey}").onWrite((snapshot, context) => {
         const groupId = context.params.groupId;
         const weekName = context.params.weekName;
         const day = context.params.day;
@@ -273,6 +267,13 @@ exports.scheduleClosingNotification = functions.pubsub
             "The schedule for this week is about to close. Please submit or make any changes before 8pm.",
         );
     });
+
+//reminder to submit schedule
+exports.scheduleProcrastinatorNotification = functions.pubsub.schedule('00 11 * * SUN,SAT')
+    .timeZone('America/Denver')
+    .onRun((context) => {
+        notifications.run_procastinatorNotification()
+    })
 
 exports.scheduleCloseScheduleCommand = functions.pubsub
     .schedule("05 20 * * SUN")
@@ -456,7 +457,7 @@ exports.modifyGroupMember = functions.https.onRequest((req, res) => {
 exports.deleteAccount = functions.https.onRequest((req, res) => {
     crud.deleteAccount(req, res)
 })
-exports.deleteGroup = functions.https.onCall(async (req) => {
+exports.deleteGroup = functions.https.onRequest(async (req) => {
     crud.deleteGroup(req)
 })
 exports.inviteUserToGroup = functions.https.onRequest((req, res) => {
