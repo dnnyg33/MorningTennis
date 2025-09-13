@@ -42,4 +42,4 @@ jobs:
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_CI_TOKEN }}
         run: |
-          firebase deploy --token "$FIREBASE_TOKEN" --project "morning-tennis"
+          firebase deploy --only functions --token "$FIREBASE_TOKEN" --project "morning-tennis"
