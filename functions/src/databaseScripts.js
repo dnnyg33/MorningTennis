@@ -1,6 +1,8 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 module.exports.addPlayersToResults = addPlayersToResults
+// module.exports.migrateAdminIdsToFirebaseIds = migrateAdminIdsToFirebaseIds
+const utilities = require("./utilities")
 
 
 exports.migrateToSetsV2 = functions.https.onRequest(async (req, res) => {
@@ -107,3 +109,35 @@ async function addPlayersToResults(req, res) {
         });
         res.end("Done")
 }
+
+
+//this script will look for adminIds in groups-v2 that are not firebaseIds (length <=10) and convert them to firebaseIds
+//it will also delete any groups where the adminId cannot be found in approvedNumbers
+exports.migrateAdminIdsToFirebaseIds = functions.https.onRequest(async (req, res) => {
+    await admin.database().ref('groups-v2').once('value', async (snapshot) => {
+        const groups = snapshot.val();
+        for (const [groupId, group] of Object.entries(groups)) {
+            console.log("Processing group " + groupId);
+            if (group.admins == null) {
+                console.log("No admins found for group: " + groupId + ", deleting group");
+                await admin.database().ref('groups-v2').child(groupId).remove()
+                continue;
+            }
+            let newAdmins = {}
+            for (const [pushId, adminId] of Object.entries(group.admins)) {
+                const firebaseId = await utilities.sanitizeUserIdToFirebaseId(adminId)
+                if( firebaseId != null ) {
+                    newAdmins[pushId] = firebaseId
+                }
+            }
+            if (newAdmins == null || Object.keys(newAdmins).length == 0) {
+                console.log("No valid admins found for group " + groupId + ", deleting group")
+                await admin.database().ref('groups-v2').child(groupId).remove()
+                continue;
+            }
+            await admin.database().ref('groups-v2').child(groupId).child("admins").set(newAdmins)
+        }
+    });
+    res.end("Done");
+
+})

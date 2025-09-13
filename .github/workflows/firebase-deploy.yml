@@ -1,0 +1,45 @@
+name: Firebase Deploy
+
+on:
+  push:
+    branches:
+      - master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      # Check out the repository to the GitHub runner
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      # Set up Node.js so we can install dependencies and run build scripts
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+
+      # Install NPM dependencies
+      - name: Install dependencies
+        run: npm install
+
+      # Optionally build your project.
+      # If your project doesn't have a build step, you can remove or modify this.
+      - name: Build project
+        run: |
+          if [ -f package.json ] && npm run | grep -q "build"; then
+            npm run build
+          else
+            echo "No build script defined, skipping build."
+          fi
+
+      # Install the Firebase CLI
+      - name: Install Firebase CLI
+        run: npm install -g firebase-tools
+
+      # Deploy to Firebase Hosting using the Firebase CI token stored in GitHub Secrets
+      - name: Deploy to Firebase
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_CI_TOKEN }}
+        run: |
+          firebase deploy --token "$FIREBASE_TOKEN"

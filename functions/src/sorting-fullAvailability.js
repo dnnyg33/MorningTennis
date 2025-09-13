@@ -1,6 +1,7 @@
 const admin = require("firebase-admin");
 module.exports.runSort = runSort;
 const index = require('./index.js')
+const utilities = require("./utilities.js");
 
 async function runSort(original, groupId, weekName) {
     let groups = await tennisSort(original, groupId)
@@ -11,12 +12,12 @@ async function runSort(original, groupId, weekName) {
 async function tennisSort(data, groupId) {
     console.log("tennisSort-fullAvailability")
     console.log(JSON.stringify(data))
-    let uniqueData = index.removeDuplicates(data)
+    let uniqueData = utilities.removeDuplicates(data)
 
     let daysMap = {}
 
     //make a map for each day with key as name of day
-    return await index.buildDynamicDaysMap(groupId).then((map) => {
+    return await utilities.buildDynamicDaysMap(groupId).then((map) => {
         daysMap = map;
         console.log("FA Days Map: " + JSON.stringify(daysMap))
         //for each entry, add player to day in order
@@ -49,6 +50,6 @@ async function tennisSort(data, groupId) {
 
 
 function buildSortedObject(pair) {
-    let shortenedName = index.shortenedName(pair.name)
+    let shortenedName = utilities.shortenedName(pair.name)
     return { "name": shortenedName, "phoneNumber": pair.phoneNumber, "firebaseId": pair.firebaseId }
 }

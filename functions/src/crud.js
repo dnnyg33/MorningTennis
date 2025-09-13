@@ -1,8 +1,9 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-const index = require('./index.js')
+const utilities = require('./utilities.js')
 const notifications = require('./notifications.js')
 const utr = require('./utr_updates.js')
+
 module.exports.processLateSubmission = processLateSubmission;
 module.exports.createUser = createUser;
 module.exports.joinGroupRequest = joinGroupRequest;
@@ -314,7 +315,7 @@ async function approveJoinRequest(req, res) {
                 admin.database().ref("approvedNumbers").child(joinRequest.userId).child("groups").set(userGroups)
                 res.send({ "data": { "result": "success", "userGroups": userGroups } })
             }
-            
+
             console.log("create member_ranking for this user")
             admin.database().ref("member_rankings").child(body.groupId).child(joinRequest.userId).set({ "utr": 4, "goodwill": 1 })
 
@@ -426,42 +427,60 @@ function inviteUserToGroup(req, res) {
  * @param suspended - whether the user is suspended from the group
  * @param firebaseId - the firebaseId of the user being modified. If this value cannot be provided, the invitedUserToGroup function should be called.
  */
-function modifyGroupMember(req, res) {
-    const body = req.body.data;
-    console.log("body: " + JSON.stringify(body))
-    //check that modifier is admin
-    admin.database().ref('groups-v2').child(body.groupId).child("admins").once('value', (snapshot) => {
-        const adminList = snapshot.val()
-        if (body.adminId == undefined || body.adminId == null) {
-            res.status(400).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "adminId is required" } })
-            return;
-        }
-        var foundAdmin = false
-        for (const [key, value] of Object.entries(adminList)) {
-            if (value == body.adminId) {
-                foundAdmin = true
-            }
-        }
-        if (!foundAdmin) {
-            console.log(body.adminId + " not found")
-            res.status(401).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "adminId is not an admin of this group" } })
-            return;
-        }
-        if (body.firebaseId == null || body.firebaseId == undefined) {
-            res.status(400).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "firebaseId is required" } })
-            return;
-        } else {
-            //todo check that firebaseId is in group
-            admin.database().ref("member_rankings").child(body.groupId).child(body.firebaseId).update({ "utr": body.utr, "goodwill": body.goodwill, "suspended": body.suspended })
-            res.status(200).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "User updated" } })
-        }
-    })
+async function modifyGroupMember(req, res) {
+    try {
+    const body = req.body ?? {};
+    console.log("body:", JSON.stringify(body));
+
+    // Validate required fields up front
+    if (!body.adminId) {
+      return res.status(400).json({ groupId: body.groupId, userPublicId: body.userPublicId, message: "adminId is required" });
+    }
+    if (!body.groupId) {
+      return res.status(400).json({ userPublicId: body.userPublicId, message: "groupId is required" });
+    }
+    if (!body.firebaseId) {
+      return res.status(400).json({ groupId: body.groupId, userPublicId: body.userPublicId, message: "firebaseId is required" });
+    }
+
+    const adminId = await utilities.sanitizeUserIdToFirebaseId(body.adminId);
+
+    // Check that modifier is admin
+    const adminsSnap = await admin.database().ref('groups-v2').child(body.groupId).child('admins').once('value');
+    const adminList = adminsSnap.val() || {};
+    console.log(adminsSnap.ref.toString());
+    console.log("adminList:", JSON.stringify(adminList));
+
+    const isAdmin = Object.values(adminList).some(v => v === adminId);
+    if (!isAdmin) {
+      console.log(adminId, "not found in admins");
+      return res.status(403).json({ groupId: body.groupId, userPublicId: body.userPublicId, message: "adminId is not an admin of this group" });
+    }
+
+    console.log(`validated adminId: ${adminId}`);
+    console.log(`updating member ranking for user: ${body.firebaseId} in group: ${body.groupId} with utr: ${body.utr} goodwill: ${body.goodwill} suspended: ${body.suspended}`);
+
+    await admin.database()
+      .ref("member_rankings")
+      .child(body.groupId)
+      .child(body.firebaseId)
+      .update({ utr: body.utr, goodwill: body.goodwill, suspended: body.suspended });
+
+    return res.status(200).json({ groupId: body.groupId, userPublicId: body.userPublicId, message: "User updated" });
+  } catch (err) {
+    console.error("modifyGroupMember error:", err);
+    // Ensure we only try to respond if headers aren't already sent
+    if (!res.headersSent) {
+      return res.status(500).json({ message: "Internal server error" });
+    }
+    // If headers already sent, just log — Express will handle the rest
+  }
 }
 
 function deleteAccount(req, res) {
     const db = admin.database();
     console.log("req.body: " + JSON.stringify(req.body))
-    const body = req.body;
+    const body = req.body.data;
     const removedLog = []
     const promises = []
     const usersPromise = admin.database().ref("approvedNumbers").child(body.userId).once('value', (snapshot) => {
@@ -536,63 +555,83 @@ function deleteAccount(req, res) {
     });
 };
 
-function deleteGroup(req, res) {
-    const body = req.body;
-    console.log(JSON.stringify(body))
+async function deleteGroup(req, res) {
     const db = admin.database();
-    const removedLog = []
-    const promises = []
-    const groupPromise = db.ref("groups-v2").child(body.groupId).once('value', (snapshot) => {
-        const group = snapshot.val()
-        if (group == null) {
-            res.status(400).send({ "data": { "result": "failure", "reason": "group not found" } })
-            return;
-        }
-        //check that user is admin of group
-        if (!Object.values(group.admins).includes(body.adminId)) {
-            res.status(401).send({ "data": { "result": "failure", "reason": "user is not admin" } })
-            return;
-        }
-        //remove group
-        db.ref("groups-v2").child(body.groupId).remove()
-        removedLog.push("groups-v2." + body.groupId)
+    const body = req.body;
+    console.log("req.body: " + JSON.stringify(req.body))
+    const groupId = body.groupId;
+    const adminId = body.adminId;
 
-        //remove member rankings for groups
-        removedLog.push("member_ranking." + body.groupId)
-        db.ref("member_rankings").child(body.groupId).remove()
+    const removedLog = [];
+    console.log("deleteGroup called with groupId: " + groupId + " adminId: " + adminId)
 
-        //remove join requests
-        const joinPromise = db.ref("joinRequests").child(body.groupId).once('value', (snapshot) => {
-            const joinRequests = snapshot.val()
-            if (joinRequests != null) {
-                for (const [key, request] of Object.entries(joinRequests)) {
-                    db.ref("joinRequests").child(body.groupId).child(key).remove()
-                    removedLog.push("joinRequests." + key)
+    if (!groupId || !adminId || groupId.length == 0 || adminId.length == 0) {
+        res.status(400).send({ result: 'failure', reason: 'missing groupId/adminId' });
+        return;
+    }
+
+    // 1) Fetch & validate
+    const groupSnap = await db.ref('groups-v2').child(groupId).once('value');
+    const group = groupSnap.val();
+
+    if (!group) {
+        res.status(400).send({ result: 'failure', reason: 'group not found' });
+        return;
+    }
+    if (!group.admins || !Object.values(group.admins).includes(adminId)) {
+        res.status(400).send({ result: 'failure', reason: 'user is not admin' });
+        return;
+    }
+
+    // 2) Stage writes
+    const tasks = [];
+
+    // remove group
+    tasks.push(
+        db.ref('groups-v2').child(groupId).remove().then(() => {
+            removedLog.push(`groups-v2.${groupId}`);
+        })
+    );
+
+    // remove member rankings
+    tasks.push(
+        db.ref('member_rankings').child(groupId).remove().then(() => {
+            removedLog.push(`member_rankings.${groupId}`);
+        })
+    );
+
+    // remove join requests (simplified)
+    tasks.push(
+        db.ref('joinRequests').child(groupId).remove().then(() => {
+            removedLog.push(`joinRequests.${groupId}`);
+        })
+    );
+
+    // remove group from all users
+    tasks.push(
+        db.ref('approvedNumbers').once('value').then((snap) => {
+            const users = snap.val() || {};
+            const updates = {};
+            for (const [uid, user] of Object.entries(users)) {
+                const groups = Array.isArray(user.groups) ? user.groups : [];
+                if (groups.includes(groupId)) {
+                    const newGroups = groups.filter((g) => g !== groupId);
+                    updates[`approvedNumbers/${uid}/groups`] = newGroups;
+                    removedLog.push(`approvedNumbers.${uid}.groups.${groupId}`);
                 }
             }
-        });
-        promises.push(joinPromise)
-
-        //remove group from all users
-        const usersPromise = db.ref("approvedNumbers").once('value', (snapshot) => {
-            const users = snapshot.val()
-            for (const [key, user] of Object.entries(users)) {
-                if (user.groups != null && user.groups.includes(body.groupId)) {
-                    user.groups = user.groups.filter(g => g !== body.groupId)
-                    db.ref("approvedNumbers").child(key).child("groups").set(user.groups)
-                    removedLog.push("approvedNumbers." + key + ".groups." + body.groupId)
-                }
+            if (Object.keys(updates).length) {
+                return db.ref().update(updates);
             }
-        });
-        promises.push(usersPromise)
+        })
+    );
 
-    });
-    promises.push(groupPromise)
-    Promise.all(promises).then(() => {
-        console.log("removedLog: " + removedLog)
-        res.send({ "data": { "result": "success", "log": removedLog } })
-    });
+    // 3) Execute
+    await Promise.all(tasks);
+    res.status(200).send({ result: 'success', log: removedLog });
+    return;
 }
+
 
 function processLateSubmission(snapshot, writeLocation) {
     const original = snapshot.after.val()
@@ -605,7 +644,7 @@ function processLateSubmission(snapshot, writeLocation) {
             existingCount = data.length
         }
         const newPlayerRef = writeLocation + "/" + existingCount
-        const newPlayerObj = { "name": index.shortenedName(original.name), "phoneNumber": original.phoneNumber, "firebaseId": original.firebaseId }
+        const newPlayerObj = { "name": utilities.shortenedName(original.name), "phoneNumber": original.phoneNumber, "firebaseId": original.firebaseId }
         console.log("adding player " + JSON.stringify(newPlayerObj) + " to " + newPlayerRef)
         admin.database().ref(newPlayerRef).set(newPlayerObj)
     })

@@ -1,6 +1,7 @@
 const admin = require("firebase-admin");
 module.exports.runSort = runSort;
 const index = require('./index.js')
+const utilities = require("./utilities.js");
 
 async function runSort(original, groupId, weekName) {
     let groups =  tennisSortForIndividual(original, groupId)
@@ -11,7 +12,7 @@ async function runSort(original, groupId, weekName) {
 
  function tennisSortForIndividual(data, groupId) {
     //for every player, for every slot, create list of other players who are available
-    let uniqueData = index.removeDuplicates(data)
+    let uniqueData = utilities.removeDuplicates(data)
     let mapOfGroupsByPlayer = {}
     let listOfAllSlots = flattenSlots(uniqueData)
     for (const [key, player] of Object.entries(uniqueData)) {
@@ -54,7 +55,7 @@ function flattenSlots(data) {
             const dayOfWeek = slot.dayOfWeek
             const startTime = slot.startTime
             const endTime = slot.endTime
-            const shortName = index.shortenedName(player.name)
+            const shortName = utilities.shortenedName(player.name)
             slotObj = { "firebaseId": player.firebaseId, "dayOfWeek": dayOfWeek, "startTime": startTime, "endTime": endTime, "phoneNumber": player.phoneNumber, "name": shortName }
             list.push(slotObj)
         }
@@ -65,12 +66,12 @@ function flattenSlots(data) {
 async function tennisSort(data, groupId) {
     console.log("tennisSort-fullAvailability")
     console.log(JSON.stringify(data))
-    let uniqueData = index.removeDuplicates(data)
+    let uniqueData = utilities.removeDuplicates(data)
 
     let daysMap = {}
 
     //make a map for each day with key as name of day
-    return await index.buildDynamicDaysMap(groupId).then((map) => {
+    return await utilities.buildDynamicDaysMap(groupId).then((map) => {
         // daysMap = map;//todo enable this for all slots to show
         console.log("FA Days Map: " + JSON.stringify(daysMap))
         //for each entry, add player to day in order
@@ -104,7 +105,7 @@ async function tennisSort(data, groupId) {
 
 
 function buildSortedObject(pair) {
-    let shortenedName = index.shortenedName(pair.name)
+    let shortenedName = utilities.shortenedName(pair.name)
     return { "name": shortenedName, "phoneNumber": pair.phoneNumber, "firebaseId": pair.firebaseId }
 }
 
