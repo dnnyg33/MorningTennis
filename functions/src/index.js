@@ -431,6 +431,8 @@ function run_openScheduleCommand() {
     }
 }
 
+//VERSION 0. Delete these functions after app deploymen to new routes
+
 
 //adhoc function to update UTRs
 exports.requestUTRUpdate = onRequest(async (req, res) => {
