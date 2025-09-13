@@ -1,3 +1,5 @@
+const admin = require("firebase-admin");
+
 
 // utilities you already export
 module.exports.dayOfWeekAsInteger = dayOfWeekAsInteger;

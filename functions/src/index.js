@@ -173,7 +173,7 @@ exports.sortWeekAfterAlgoChange = functions.database
 
         // 1. Ignore if the node was deleted
         if (after === null) {
-            console.log("sortingAlgorithm deleted, skipping.");
+            console.log("group deleted, skipping.");
             return null;
         }
 

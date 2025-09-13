@@ -2,7 +2,7 @@ const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 module.exports.addPlayersToResults = addPlayersToResults
 // module.exports.migrateAdminIdsToFirebaseIds = migrateAdminIdsToFirebaseIds
-const index = require("./index.js")
+const utilities = require("./utilities")
 
 
 exports.migrateToSetsV2 = functions.https.onRequest(async (req, res) => {
@@ -125,7 +125,7 @@ exports.migrateAdminIdsToFirebaseIds = functions.https.onRequest(async (req, res
             }
             let newAdmins = {}
             for (const [pushId, adminId] of Object.entries(group.admins)) {
-                const firebaseId = await index.sanitizeUserIdToFirebaseId(adminId)
+                const firebaseId = await utilities.sanitizeUserIdToFirebaseId(adminId)
                 if( firebaseId != null ) {
                     newAdmins[pushId] = firebaseId
                 }

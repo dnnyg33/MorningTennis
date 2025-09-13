@@ -1,8 +1,9 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
-const index = require('./index.js')
+const utilities = require('./utilities.js')
 const notifications = require('./notifications.js')
 const utr = require('./utr_updates.js')
+
 module.exports.processLateSubmission = processLateSubmission;
 module.exports.createUser = createUser;
 module.exports.joinGroupRequest = joinGroupRequest;
@@ -427,37 +428,53 @@ function inviteUserToGroup(req, res) {
  * @param firebaseId - the firebaseId of the user being modified. If this value cannot be provided, the invitedUserToGroup function should be called.
  */
 async function modifyGroupMember(req, res) {
-    const body = req;
-    if (body.adminId == undefined || body.adminId == null) {
-        res.status(400).send({ "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "adminId is required" });
-    }
-    const adminId = await index.sanitizeUserIdToFirebaseId(body.adminId)
-    console.log("body: " + JSON.stringify(body))
-    //check that modifier is admin
-    const snapshot = await admin.database().ref('groups-v2').child(body.groupId).child("admins").once('value')
-    console.log(snapshot.ref.toString())
-    const adminList = snapshot.val()
-    console.log("adminList: " + JSON.stringify(adminList))
+    try {
+    const body = req.body ?? {};
+    console.log("body:", JSON.stringify(body));
 
-    var foundAdmin = false
-    for (const [key, value] of Object.entries(adminList)) {
-        if (value == adminId) {
-            foundAdmin = true
-        }
+    // Validate required fields up front
+    if (!body.adminId) {
+      return res.status(400).json({ groupId: body.groupId, userPublicId: body.userPublicId, message: "adminId is required" });
     }
-    if (!foundAdmin) {
-        console.log(adminId + " not found")
-        res.status(410).send({ "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "adminId is not an admin of this group" });
+    if (!body.groupId) {
+      return res.status(400).json({ userPublicId: body.userPublicId, message: "groupId is required" });
     }
-    console.log("validated adminId: " + adminId)
-    if (body.firebaseId == null || body.firebaseId == undefined) {
-        console.log("firebaseId is required")
-        res.status(400).send({ "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "firebaseId is required" });
-    } else {
-        //todo check that firebaseId is in group
-        admin.database().ref("member_rankings").child(body.groupId).child(body.firebaseId).update({ "utr": body.utr, "goodwill": body.goodwill, "suspended": body.suspended })
-        res.status(200).send({ "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "User updated" });
+    if (!body.firebaseId) {
+      return res.status(400).json({ groupId: body.groupId, userPublicId: body.userPublicId, message: "firebaseId is required" });
     }
+
+    const adminId = await utilities.sanitizeUserIdToFirebaseId(body.adminId);
+
+    // Check that modifier is admin
+    const adminsSnap = await admin.database().ref('groups-v2').child(body.groupId).child('admins').once('value');
+    const adminList = adminsSnap.val() || {};
+    console.log(adminsSnap.ref.toString());
+    console.log("adminList:", JSON.stringify(adminList));
+
+    const isAdmin = Object.values(adminList).some(v => v === adminId);
+    if (!isAdmin) {
+      console.log(adminId, "not found in admins");
+      return res.status(403).json({ groupId: body.groupId, userPublicId: body.userPublicId, message: "adminId is not an admin of this group" });
+    }
+
+    console.log(`validated adminId: ${adminId}`);
+    console.log(`updating member ranking for user: ${body.firebaseId} in group: ${body.groupId} with utr: ${body.utr} goodwill: ${body.goodwill} suspended: ${body.suspended}`);
+
+    await admin.database()
+      .ref("member_rankings")
+      .child(body.groupId)
+      .child(body.firebaseId)
+      .update({ utr: body.utr, goodwill: body.goodwill, suspended: body.suspended });
+
+    return res.status(200).json({ groupId: body.groupId, userPublicId: body.userPublicId, message: "User updated" });
+  } catch (err) {
+    console.error("modifyGroupMember error:", err);
+    // Ensure we only try to respond if headers aren't already sent
+    if (!res.headersSent) {
+      return res.status(500).json({ message: "Internal server error" });
+    }
+    // If headers already sent, just log — Express will handle the rest
+  }
 }
 
 function deleteAccount(req, res) {
@@ -627,7 +644,7 @@ function processLateSubmission(snapshot, writeLocation) {
             existingCount = data.length
         }
         const newPlayerRef = writeLocation + "/" + existingCount
-        const newPlayerObj = { "name": index.shortenedName(original.name), "phoneNumber": original.phoneNumber, "firebaseId": original.firebaseId }
+        const newPlayerObj = { "name": utilities.shortenedName(original.name), "phoneNumber": original.phoneNumber, "firebaseId": original.firebaseId }
         console.log("adding player " + JSON.stringify(newPlayerObj) + " to " + newPlayerRef)
         admin.database().ref(newPlayerRef).set(newPlayerObj)
     })
