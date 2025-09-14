@@ -42,6 +42,25 @@ app.use(
         maxAge: 86400,
     }),
 );
+app.use((req, res, next) => {
+  const start = Date.now();
+  functions.logger.info("Incoming request", {
+    method: req.method,
+    url: req.originalUrl,
+    ip: req.ip,
+  });
+  next();
+  res.on("finish", () => {
+    functions.logger.info("HTTP request", {
+      method: req.method,
+      url: req.originalUrl,      // includes /v1/... route
+      status: res.statusCode,
+      duration_ms: Date.now() - start,
+      ip: req.ip,
+    });
+  });
+  next();
+});
 
 // Make caches respect per-origin responses
 app.use((req, res, next) => {
