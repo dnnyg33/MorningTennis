@@ -59,7 +59,6 @@ app.use((req, res, next) => {
       ip: req.ip,
     });
   });
-  next();
 });
 
 // Make caches respect per-origin responses
