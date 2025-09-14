@@ -1,6 +1,7 @@
 const functions = require("firebase-functions");
 const admin = require("firebase-admin");
 module.exports.addPlayersToResults = addPlayersToResults
+module.exports.migrateAdminIdsToFirebaseIds = migrateAdminIdsToFirebaseIds
 // module.exports.migrateAdminIdsToFirebaseIds = migrateAdminIdsToFirebaseIds
 const utilities = require("./utilities")
 
@@ -92,7 +93,7 @@ async function addPlayersToResults(req, res) {
     await admin.database().ref("results-v2").once('value', async (snapshot) => {
         const data = snapshot.val()
         for (const [key, resultGroupForUser] of Object.entries(data)) {
-            for(const [key1, result] of Object.entries(resultGroupForUser)){
+            for (const [key1, result] of Object.entries(resultGroupForUser)) {
                 //lookup set
                 const set = await admin.database().ref("sets-v2").child(result.group).child(result.setId).once('value')
                 const setData = set.val()
@@ -106,14 +107,14 @@ async function addPlayersToResults(req, res) {
                 admin.database().ref("results-v2").child(key).child(key1).set(result)
             }
         }
-        });
-        res.end("Done")
+    });
+    res.end("Done")
 }
 
 
 //this script will look for adminIds in groups-v2 that are not firebaseIds (length <=10) and convert them to firebaseIds
 //it will also delete any groups where the adminId cannot be found in approvedNumbers
-exports.migrateAdminIdsToFirebaseIds = functions.https.onRequest(async (req, res) => {
+async function migrateAdminIdsToFirebaseIds(req, res) {
     await admin.database().ref('groups-v2').once('value', async (snapshot) => {
         const groups = snapshot.val();
         for (const [groupId, group] of Object.entries(groups)) {
@@ -126,7 +127,7 @@ exports.migrateAdminIdsToFirebaseIds = functions.https.onRequest(async (req, res
             let newAdmins = {}
             for (const [pushId, adminId] of Object.entries(group.admins)) {
                 const firebaseId = await utilities.sanitizeUserIdToFirebaseId(adminId)
-                if( firebaseId != null ) {
+                if (firebaseId != null) {
                     newAdmins[pushId] = firebaseId
                 }
             }
@@ -140,4 +141,4 @@ exports.migrateAdminIdsToFirebaseIds = functions.https.onRequest(async (req, res
     });
     res.end("Done");
 
-})
+}

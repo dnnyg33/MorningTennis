@@ -133,25 +133,25 @@ v1.post("/db/addPlayersToResults", async (req, res) => {
 });
 
 /** ---- CRUD routes (were individual https.onRequest functions) ---- */
-v1.post("/createUser", (req, res) => crud.createUser(req, res));
+v1.post("/createUser", (req, res) => crud.createUser(req.body, res));
 v1.post("/joinGroupRequest", (req, res) => {
     console.log("Join group request");
-    crud.joinGroupRequest(req, res);
+    crud.joinGroupRequest(req.body, res);
 });
-v1.post("/toggleAdmin", (req, res) => crud.toggleAdmin(req, res));
+v1.post("/toggleAdmin", (req, res) => crud.toggleAdmin(req.body, res));
 v1.post("/approveJoinRequest", (req, res) => {
     console.log("Approve join request");
-    crud.approveJoinRequest(req, res);
+    crud.approveJoinRequest(req.body, res);
 });
 v1.post("/approveSetRequest", (req, res) => {
     console.log("Approve set request");
-    crud.approveSetRequest(req, res);
+    crud.approveSetRequest(req.body, res);
 });
-v1.post("/modifyGroupMember", (req, res) => crud.modifyGroupMember(req, res));
-v1.post("/deleteAccount", (req, res) => crud.deleteAccount(req, res));
-v1.post("/deleteGroup", (req, res) => crud.deleteGroup(req, res));
+v1.post("/modifyGroupMember", (req, res) => crud.modifyGroupMember(req.body, res));
+v1.post("/deleteAccount", (req, res) => crud.deleteAccount(req.body, res));
+v1.post("/deleteGroup", (req, res) => crud.deleteGroup(req.body, res));
 v1.post("/createGroup", (req, res) => crud.createGroup(req, res));
-v1.post("/inviteUserToGroup", (req, res) => crud.inviteUserToGroup(req, res));
+v1.post("/inviteUserToGroup", (req, res) => crud.inviteUserToGroup(req.body, res));
 
 
 // mount versions
@@ -389,6 +389,8 @@ function run_openScheduleCommand() {
     }
 }
 
+///TODO remove all old functions once new app version is released so that update to node 20 can be done.
+
 //adhoc function to update UTRs
 exports.requestUTRUpdate = functions.https.onRequest(async (req, res) => {
     //get groupId from path
@@ -434,34 +436,34 @@ exports.sendRSVPUpdateNotification = functions.https.onRequest(async (req, res) 
 
 ///CRUD
 module.exports.createUser = functions.https.onRequest((req, res) => {
-    crud.createUser(req, res)
+    crud.createUser(req.body.data, res)
 })
 exports.joinGroupRequest = functions.https.onRequest((req, res) => {
     console.log("Join group request")
-    crud.joinGroupRequest(req, res)
+    crud.joinGroupRequest(req.body.data, res)
 })
 exports.toggleAdmin = functions.https.onRequest((req, res) => {
-    crud.toggleAdmin(req, res)
+    crud.toggleAdmin(req.body.data, res)
 })
 exports.approveJoinRequest = functions.https.onRequest((req, res) => {
     console.log("Approve join request")
-    crud.approveJoinRequest(req, res)
+    crud.approveJoinRequest(req.body.data, res)
 })
 exports.approveSetRequest = functions.https.onRequest((req, res) => {
     console.log("Approve set request")
-    crud.approveSetRequest(req, res)
+    crud.approveSetRequest(req.body.data, res)
 })
 exports.modifyGroupMember = functions.https.onRequest((req, res) => {
-    crud.modifyGroupMember(req, res)
+    crud.modifyGroupMember(req.body.data, res)
 })
 exports.deleteAccount = functions.https.onRequest((req, res) => {
-    crud.deleteAccount(req, res)
+    crud.deleteAccount(req.body.data, res)
 })
-exports.deleteGroup = functions.https.onRequest(async (req) => {
-    crud.deleteGroup(req)
+exports.deleteGroup = functions.https.onRequest(async (req, res) => {
+    crud.deleteGroup(req.body.data, res)
 })
 exports.inviteUserToGroup = functions.https.onRequest((req, res) => {
-    crud.inviteUserToGroup(req, res)
+    crud.inviteUserToGroup(req.body.data, res)
 })
 exports.addPlayersToResults = functions.https.onRequest(async (req, res) => {
     await dbScripts.addPlayersToResults(req, res)

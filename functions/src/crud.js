@@ -26,8 +26,7 @@ module.exports.createGroup = createGroup;
  * @param email - the user's email (optional and can replace the phone number as the unique identifier)
  * @param tokens - the user's firebase tokens
  */
-function createUser(req, res) {
-    const body = req.body.data;
+function createUser(body, res) {
     console.log("body: " + JSON.stringify(body))
     if (body.firebaseId == null || body.name == null || (body.phoneNumber == null && body.email == null)) {
         res.status(400).send({ "data": { "result": "failure", "reason": "firebaseId, name and either phoneNumber or email are required" } })
@@ -97,8 +96,7 @@ function createUser(req, res) {
  * @param {*} req 
  * @param {*} res 
  */
-async function joinGroupRequest(req, res) {
-    const body = req.body.data;
+async function joinGroupRequest(body, res) {
     await admin.database().ref("groups-v2").child(body.groupId).once('value', async (snapshot) => {
         const group = snapshot.val();
         if (group == null) {
@@ -158,8 +156,7 @@ async function joinGroupRequest(req, res) {
 }
 
 
-function toggleAdmin(req, res) {
-    const body = req.body.data;
+function toggleAdmin(body, res) {
     //lookup group
     admin.database().ref("groups-v2").child(body.groupId).once('value', (snapshot) => {
         const group = snapshot.val();
@@ -193,9 +190,8 @@ function toggleAdmin(req, res) {
     });
 }
 
-async function approveSetRequest(req, res) {
+async function approveSetRequest(data, res) {
     console.log("req.body: " + JSON.stringify(req.body))
-    const data = req.body.data;
     const groupId = data.groupId;
     const setId = data.pushId;
     const userId = data.userId;
@@ -280,8 +276,7 @@ async function approveSetRequest(req, res) {
     res.status(401).send({ "data": { "message": "User not authorized" } })
 }
 
-async function approveJoinRequest(req, res) {
-    const body = req.body.data;
+async function approveJoinRequest(body, res) {
     console.log("request body: " + JSON.stringify(body))
     admin.database().ref("joinRequests").child(body.groupId).child(body.pushId).once('value', async (snapshot) => {
         const joinRequest = snapshot.val()
@@ -351,8 +346,7 @@ async function approveJoinRequest(req, res) {
  * @param utr - the utr of the user being invited (optional). If null, a default 4.0 is used.
  * @param goodwill - the goodwill of the user being invited (optional). If null, a default 1.0 is used.
  */
-function inviteUserToGroup(req, res) {
-    const body = req.body.data;
+function inviteUserToGroup(body, res) {
     console.log("body: " + JSON.stringify(body))
     admin.database().ref('groups-v2').child(body.groupId).child("admins").once('value', (snapshot) => {
         const adminList = snapshot.val()
@@ -428,9 +422,8 @@ function inviteUserToGroup(req, res) {
  * @param suspended - whether the user is suspended from the group
  * @param firebaseId - the firebaseId of the user being modified. If this value cannot be provided, the invitedUserToGroup function should be called.
  */
-async function modifyGroupMember(req, res) {
+async function modifyGroupMember(body, res) {
     try {
-    const body = req.body ?? {};
     console.log("body:", JSON.stringify(body));
 
     // Validate required fields up front
@@ -478,10 +471,9 @@ async function modifyGroupMember(req, res) {
   }
 }
 
-function deleteAccount(req, res) {
+function deleteAccount(body, res) {
     const db = admin.database();
-    console.log("req.body: " + JSON.stringify(req.body))
-    const body = req.body.data;
+    console.log("req.body: " + JSON.stringify(body))
     const removedLog = []
     const promises = []
     const usersPromise = admin.database().ref("approvedNumbers").child(body.userId).once('value', (snapshot) => {
@@ -607,10 +599,9 @@ async function createGroup(req, res) {
 }
 
 
-async function deleteGroup(req, res) {
+async function deleteGroup(body, res) {
     const db = admin.database();
-    const body = req.body;
-    console.log("req.body: " + JSON.stringify(req.body))
+    console.log("req.body: " + JSON.stringify(body))
     const groupId = body.groupId;
     const adminId = body.adminId;
 
