@@ -96,7 +96,7 @@ v1.post("/requestUTRUpdate", async (req, res) => {
 v1.post("/logout", async (req, res) => {
     try {
         console.log("logout function called");
-        let body = req.body?.data ?? {};
+        let body = req.body ?? {};
         if (!body.firebaseId) return res.status(400).send("firebaseId is required");
         if (!body.deviceName) return res.status(400).send("deviceName is required");
 
@@ -138,7 +138,7 @@ v1.post("/joinGroupRequest", (req, res) => {
     console.log("Join group request");
     crud.joinGroupRequest(req.body, res);
 });
-v1.post("/toggleAdmin", (req, res) => crud.toggleAdmin(req.body, res));
+v1.post("/createAdmin", (req, res) => crud.toggleAdmin(req.body, res));
 v1.post("/approveJoinRequest", (req, res) => {
     console.log("Approve join request");
     crud.approveJoinRequest(req.body, res);

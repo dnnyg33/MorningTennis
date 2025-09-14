@@ -156,30 +156,31 @@ async function joinGroupRequest(body, res) {
 }
 
 
-function toggleAdmin(body, res) {
+async function toggleAdmin(body, res) {
     //lookup group
-    admin.database().ref("groups-v2").child(body.groupId).once('value', (snapshot) => {
+    admin.database().ref("groups-v2").child(body.groupId).once('value', async (snapshot) => {
         const group = snapshot.val();
         if (group == null) {
             res.send(400, { "data": { "result": "failure", "reason": "group not found" } })
             return;
         }
+        const adminId = await utilities.sanitizeUserIdToFirebaseId(body.adminId)
         //check that user is admin of group
-        if (!Object.values(group.admins).includes(body.adminId)) {
+        if (Object.values(group.admins).indexOf(adminId) === -1) {
             res.send(401, { "data": { "result": "failure", "reason": "user is not admin" } })
             return;
         }
 
-        if (group.admins.includes(body.userId)) {
+        if (Object.values(group.admins).indexOf(body.userId) > -1) {
             //make sure there are at least 2 admins before removing one
             if (group.admins.length == 1) {
                 res.send(400, { "data": { "result": "failure", "reason": "cannot remove last admin" } })
                 return;
             }
             //remove userId from list of admins
-            const index = group.admins.indexOf(body.userId);
+            const index = Object.values(group.admins).indexOf(body.userId);
             if (index > -1) {
-                group.admins.splice(index, 1);
+                Object.values(group.admins).splice(index, 1);
             }
         } else {
             //add userId to list of admins
@@ -346,26 +347,27 @@ async function approveJoinRequest(body, res) {
  * @param utr - the utr of the user being invited (optional). If null, a default 4.0 is used.
  * @param goodwill - the goodwill of the user being invited (optional). If null, a default 1.0 is used.
  */
-function inviteUserToGroup(body, res) {
+async function inviteUserToGroup(body, res) {
     console.log("body: " + JSON.stringify(body))
+    const adminId = await utilities.sanitizeUserIdToFirebaseId(body.adminId)
     admin.database().ref('groups-v2').child(body.groupId).child("admins").once('value', (snapshot) => {
         const adminList = snapshot.val()
-        if (body.userPublicId == undefined || body.userPublicId == null) {
+        if (body.userPublicId == undefined) {
             res.status(400).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "userPublicId is required" } })
             return;
         }
-        if (body.adminId == undefined || body.adminId == null) {
+        if (adminId == undefined) {
             res.status(400).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "adminId is required" } })
             return;
         }
         var foundAdmin = false
         for (const [key, value] of Object.entries(adminList)) {
-            if (value == body.adminId) {
+            if (value == adminId) {
                 foundAdmin = true
             }
         }
         if (!foundAdmin) {
-            console.log(body.adminId + " not found")
+            console.log(adminId + " not found")
             res.status(401).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "adminId is not an admin of this group" } })
             return;
         }
@@ -396,7 +398,7 @@ function inviteUserToGroup(body, res) {
                 }
             }
             if (!foundUser) {
-                var newUser = { "group": body.groupId, "adminId": body.adminId, "dateInvited": new Date().getTime(), "publicId": body.userPublicId, "providedName": body.providedName }
+                var newUser = { "group": body.groupId, "adminId": adminId, "dateInvited": new Date().getTime(), "publicId": body.userPublicId, "providedName": body.providedName }
                 let pushKey = admin.database().ref("invitedUsers").child(body.userPublicId).push()
                 pushKey.set(newUser)
                 console.log("pushKey: " + JSON.stringify(pushKey))
