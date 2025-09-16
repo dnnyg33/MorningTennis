@@ -353,11 +353,11 @@ async function inviteUserToGroup(body, res) {
     admin.database().ref('groups-v2').child(body.groupId).child("admins").once('value', (snapshot) => {
         const adminList = snapshot.val()
         if (body.userPublicId == undefined) {
-            res.status(400).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "userPublicId is required" } })
+            res.status(400).send({ "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "userPublicId is required" } )
             return;
         }
         if (adminId == undefined) {
-            res.status(400).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "adminId is required" } })
+            res.status(400).send({ "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "adminId is required" } )
             return;
         }
         var foundAdmin = false
@@ -368,7 +368,7 @@ async function inviteUserToGroup(body, res) {
         }
         if (!foundAdmin) {
             console.log(adminId + " not found")
-            res.status(401).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "adminId is not an admin of this group" } })
+            res.status(401).send({ "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "adminId is not an admin of this group" } )
             return;
         }
     }).then(() => {
@@ -383,14 +383,14 @@ async function inviteUserToGroup(body, res) {
                         user.groups = [body.groupId]
                         console.log("User updated with group: " + JSON.stringify(user))
                         admin.database().ref("approvedNumbers").child(key).update(user)
-                        res.status(200).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "Existing user added to first group" } })
+                        res.status(200).send({ "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "Existing user added to first group" } )
                     } else if (user.groups.includes(body.groupId)) {
-                        res.status(200).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "User already in group" } })
+                        res.status(200).send({ "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "User already in group" } )
                     } else {
                         user.groups.push(body.groupId)
                         console.log(user.groups)
                         admin.database().ref("approvedNumbers").child(key).update(user)
-                        res.status(200).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "Existing user added to new group" } })
+                        res.status(200).send({ "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "Existing user added to new group" } )
                     }
                     //create member_ranking for this user
                     createMemberRanking(key);
@@ -403,7 +403,7 @@ async function inviteUserToGroup(body, res) {
                 pushKey.set(newUser)
                 console.log("pushKey: " + JSON.stringify(pushKey))
                 createMemberRanking(body.userPublicId);
-                res.status(200).send({ "data": { "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "User invited to group. Once they create an account they will be added to the group." } })
+                res.status(200).send({ "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "User invited to group. Once they create an account they will be added to the group." } )
             }
         })
     })
