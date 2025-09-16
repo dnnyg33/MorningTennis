@@ -17,7 +17,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: '18'
+          node-version: '20'
 
       # Install NPM dependencies
       - name: Install dependencies
@@ -42,4 +42,4 @@ jobs:
         env:
           FIREBASE_TOKEN: ${{ secrets.FIREBASE_CI_TOKEN }}
         run: |
-          firebase deploy --token "$FIREBASE_TOKEN" --project "morning-tennis"
+          firebase deploy --only functions --token "$FIREBASE_TOKEN" --project "morning-tennis"
