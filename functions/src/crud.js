@@ -30,7 +30,7 @@ function createUser(req, res) {
     const body = req.body
     console.log("body: " + JSON.stringify(body))
     if (body.firebaseId == null || body.name == null || (body.phoneNumber == null && body.email == null)) {
-        res.status(400).send({ "data": { "result": "failure", "reason": "firebaseId, name and either phoneNumber or email are required" } })
+        res.status(400).send({ "result": "failure", "reason": "firebaseId, name and either phoneNumber or email are required" })
         return;
     }
     //check for existing user with id as phone number
@@ -52,7 +52,7 @@ function createUser(req, res) {
                 console.log("serverUser: " + JSON.stringify(serverUser))
                 console.log("key: " + key)
                 admin.database().ref("approvedNumbers").child(key).update(serverUser);
-                res.status(200).send({ "data": serverUser });
+                res.status(200).send(serverUser);
                 return;
             }
         }
@@ -85,7 +85,7 @@ function createUser(req, res) {
         };
         console.log("newUser: " + JSON.stringify(newUser))
         admin.database().ref("approvedNumbers").child(body.firebaseId).set(newUser);
-        res.status(200).send({ "data": newUser });
+        res.status(200).send(newUser);
     })
 };
 
@@ -103,7 +103,7 @@ async function joinGroupRequest(req, res) {
     await admin.database().ref("groups-v2").child(body.groupId).once('value', async (snapshot) => {
         const group = snapshot.val();
         if (group == null) {
-            res.status(400).send({ "data": { "result": "failure", "reason": "group not found" } })
+            res.status(400).send({ "result": "failure", "reason": "group not found" })
             return;
         }
         if (group.visibility == "public") {
@@ -133,10 +133,10 @@ async function joinGroupRequest(req, res) {
 
                 await notifications.sendNotificationsToGroup(message, await notifications.getRegistrationTokensFromFirebaseIds(adminIds))
             }).then(() => {
-                res.send({ "data": { "result": "pending" } })
+                res.send({ "result": "pending" })
             })
         }
-    }).catch((error) => { console.error(error); res.send(500, { "data": { "result": "failure", "reason": error } }); });
+    }).catch((error) => { console.error(error); res.send(500, { "result": "failure", "reason": error }); });
 
     function addGroupToUser() {
         admin.database().ref("approvedNumbers").child(body.userId).child('groups').once('value', (snapshotGroups) => {
@@ -145,14 +145,14 @@ async function joinGroupRequest(req, res) {
                 groups = [];
             }
             if (groups.includes(body.groupId)) {
-                res.send({ "data": { "result": "failure", "reason": "already in group" } });
+                res.send({ "result": "failure", "reason": "already in group" });
             } else {
                 //create member_ranking for this user
                 admin.database().ref("member_rankings").child(body.groupId).child(body.userId).set({ "utr": 4, "goodwill": 1 })
 
                 groups.push(body.groupId);
                 admin.database().ref("approvedNumbers").child(body.userId).child("groups").set(groups);
-                res.send({ "data": { "result": "success" } });
+                res.send({ "result": "success" });
             }
         });
     }
@@ -299,7 +299,7 @@ async function approveJoinRequest(req, res) {
         const joinRequest = snapshot.val()
         console.log("joinRequest: " + JSON.stringify(joinRequest))
         if (joinRequest == null) {
-            res.send({ "data": { "result": "failure", "reason": "joinRequest not found" } })
+            res.send({ "result": "failure", "reason": "joinRequest not found" })
         } else {
             let group = (await admin.database().ref("groups-v2").child(body.groupId).get()).val();
             //verify that user is admin
@@ -321,12 +321,12 @@ async function approveJoinRequest(req, res) {
             }
             if (userGroups.includes(body.groupId)) {
                 console.log("already in group, exiting")
-                res.send({ "data": { "result": "failure", "reason": "already in group" } })
+                res.send({ "result": "failure", "reason": "already in group" })
                 return
             } else {
                 userGroups.push(body.groupId)
                 admin.database().ref("approvedNumbers").child(joinRequest.userId).child("groups").set(userGroups)
-                res.send({ "data": { "result": "success", "userGroups": userGroups } })
+                res.send({ "result": "success", "userGroups": userGroups })
             }
 
             console.log("create member_ranking for this user")
