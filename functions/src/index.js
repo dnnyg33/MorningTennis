@@ -5,6 +5,8 @@ const { onRequest } = require("firebase-functions/v2/https");
 const { onValueWritten } = require("firebase-functions/v2/database");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const admin = require("firebase-admin");
+const functions = require("firebase-functions");
+const chalk = require("chalk");
 
 // ----- Your modules -----
 const sortingTimePreference = require("./sorting-timePreference.js");
@@ -53,14 +55,14 @@ app.use(
 );
 app.use((req, res, next) => {
   const start = Date.now();
-  functions.logger.info("Incoming request", {
+  functions.logger.info(chalk.green("Incoming request"), {
     method: req.method,
     url: req.originalUrl,
     ip: req.ip,
   });
   next();
   res.on("finish", () => {
-    functions.logger.info("HTTP request", {
+    functions.logger.info(chalk.green("HTTP request finished"), {
       method: req.method,
       url: req.originalUrl,      // includes /v1/... route
       status: res.statusCode,
@@ -176,7 +178,7 @@ v1.post("/modifyGroupMember", (req, res) => crud.modifyGroupMember(req, res));
 v1.post("/deleteAccount", (req, res) => crud.deleteAccount(req, res));
 v1.post("/deleteGroup", (req, res) => crud.deleteGroup(req, res));
 v1.post("/createGroup", (req, res) => crud.createGroup(req, res));
-v1.post("/inviteUserToGroup", (req, res) => crud.inviteUserToGroup(req.body, res));
+v1.post("/inviteUserToGroup", (req, res) => crud.inviteUserToGroup(req, res));
 
 // Mount versions
 app.use("/v1", v1);
