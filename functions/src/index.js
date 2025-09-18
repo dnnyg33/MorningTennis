@@ -5,6 +5,8 @@ const { onRequest } = require("firebase-functions/v2/https");
 const { onValueWritten } = require("firebase-functions/v2/database");
 const { onSchedule } = require("firebase-functions/v2/scheduler");
 const admin = require("firebase-admin");
+const functions = require("firebase-functions");
+const chalk = require("chalk");
 
 // ----- Your modules -----
 const sortingTimePreference = require("./sorting-timePreference.js");
@@ -51,6 +53,24 @@ app.use(
         maxAge: 86400,
     }),
 );
+app.use((req, res, next) => {
+  const start = Date.now();
+  functions.logger.info(chalk.green("Incoming request"), {
+    method: req.method,
+    url: req.originalUrl,
+    ip: req.ip,
+  });
+  next();
+  res.on("finish", () => {
+    functions.logger.info(chalk.green("HTTP request finished"), {
+      method: req.method,
+      url: req.originalUrl,      // includes /v1/... route
+      status: res.statusCode,
+      duration_ms: Date.now() - start,
+      ip: req.ip,
+    });
+  });
+});
 
 // Make caches respect per-origin responses
 app.use((req, res, next) => {
@@ -110,7 +130,8 @@ v1.post("/requestUTRUpdate", async (req, res) => {
 // POST /v1/logout
 v1.post("/logout", async (req, res) => {
     try {
-        let body = req.body?.data ?? {};
+        console.log("logout function called");
+        let body = req.body ?? {};
         if (!body.firebaseId) return res.status(400).send("firebaseId is required");
         if (!body.deviceName) return res.status(400).send("deviceName is required");
 
@@ -150,7 +171,7 @@ v1.post("/db/addPlayersToResults", async (req, res) => {
 // CRUD routes
 v1.post("/createUser", (req, res) => crud.createUser(req, res));
 v1.post("/joinGroupRequest", (req, res) => crud.joinGroupRequest(req, res));
-v1.post("/toggleAdmin", (req, res) => crud.toggleAdmin(req, res));
+v1.post("/createAdmin", (req, res) => crud.toggleAdmin(req, res));
 v1.post("/approveJoinRequest", (req, res) => crud.approveJoinRequest(req, res));
 v1.post("/approveSetRequest", (req, res) => crud.approveSetRequest(req, res));
 v1.post("/modifyGroupMember", (req, res) => crud.modifyGroupMember(req, res));
@@ -431,8 +452,7 @@ function run_openScheduleCommand() {
     }
 }
 
-//VERSION 0. Delete these functions after app deploymen to new routes
-
+///TODO remove all old functions once new app version is released so that update to node 20 can be done.
 
 //adhoc function to update UTRs
 exports.requestUTRUpdate = onRequest(async (req, res) => {
@@ -476,41 +496,3 @@ exports.sendRSVPUpdateNotification = onRequest(async (req, res) => {
     }
 })
 
-
-///CRUD
-module.exports.createUser = onRequest((req, res) => {
-    crud.createUser(req, res)
-})
-exports.joinGroupRequest = onRequest((req, res) => {
-    console.log("Join group request")
-    crud.joinGroupRequest(req, res)
-})
-exports.toggleAdmin = onRequest((req, res) => {
-    crud.toggleAdmin(req, res)
-})
-exports.approveJoinRequest = onRequest((req, res) => {
-    console.log("Approve join request")
-    crud.approveJoinRequest(req, res)
-})
-exports.approveSetRequest = onRequest((req, res) => {
-    console.log("Approve set request")
-    crud.approveSetRequest(req, res)
-})
-exports.modifyGroupMember = onRequest((req, res) => {
-    crud.modifyGroupMember(req, res)
-})
-exports.deleteAccount = onRequest((req, res) => {
-    crud.deleteAccount(req, res)
-})
-exports.deleteGroup = onRequest(async (req) => {
-    crud.deleteGroup(req)
-})
-exports.inviteUserToGroup = onRequest((req, res) => {
-    crud.inviteUserToGroup(req, res)
-})
-exports.addPlayersToResults = onRequest(async (req, res) => {
-    await dbScripts.addPlayersToResults(req, res)
-})
-exports.migrateAdminIdsToFirebaseIds = onRequest(async (req, res) => {
-    await dbScripts.migrateAdminIdsToFirebaseIds(req, res)
-})

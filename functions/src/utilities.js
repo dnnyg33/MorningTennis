@@ -9,6 +9,7 @@ module.exports.removeEmptyDays = removeEmptyDays;
 module.exports.buildDynamicDaysMap = buildDynamicDaysMap;
 module.exports.fmt = fmt;
 module.exports.sanitizeUserIdToFirebaseId = sanitizeUserIdToFirebaseId;
+module.exports.removeByValue = removeByValue;
 
 Date.prototype.addDays = function (d) { return new Date(this.valueOf() + 864E5 * d); };
 function createNewWeekDbPath(weekStartDay) {
@@ -149,4 +150,8 @@ async function sanitizeUserIdToFirebaseId(id) {
     }
     console.log("No firebaseId found for adminId: " + id)
     return null
+}
+
+function removeByValue(originalMap, valueToRemove) {
+  return Object.entries(originalMap).filter(([key, value]) => value !== valueToRemove).reduce((obj, [key, value]) => (obj[key] = value, obj), {});
 }

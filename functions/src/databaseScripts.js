@@ -3,8 +3,8 @@
 // ===========================
 const { onRequest } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
-
-module.exports.addPlayersToResults = addPlayersToResults;
+module.exports.addPlayersToResults = addPlayersToResults
+module.exports.migrateAdminIdsToFirebaseIds = migrateAdminIdsToFirebaseIds
 // module.exports.migrateAdminIdsToFirebaseIds = migrateAdminIdsToFirebaseIds
 const utilities = require("./utilities");
 
@@ -156,7 +156,7 @@ async function addPlayersToResults(_req, res) {
 
 // this script looks for adminIds in groups-v2 that are not firebaseIds (<=10 chars) and converts them
 // it will also delete any groups where the adminId cannot be found in approvedNumbers
-exports.migrateAdminIdsToFirebaseIds = onRequest(async (_req, res) => {
+async function migrateAdminIdsToFirebaseIds(_req, res) {
     try {
         const groupsSnap = await admin.database().ref("groups-v2").get();
         const groups = groupsSnap.val() || {};
@@ -190,4 +190,4 @@ exports.migrateAdminIdsToFirebaseIds = onRequest(async (_req, res) => {
         console.error("migrateAdminIdsToFirebaseIds error:", err);
         res.status(500).send(String(err?.message || err));
     }
-});
+};
