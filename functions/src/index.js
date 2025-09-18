@@ -450,49 +450,5 @@ function run_openScheduleCommand() {
             });
         }
     }
+
 }
-
-///TODO remove all old functions once new app version is released so that update to node 20 can be done.
-
-//adhoc function to update UTRs
-exports.requestUTRUpdate = onRequest(async (req, res) => {
-    //get groupId from path
-    const groupId = req.query["groupId"];
-    await utr.executeUTRUpdate(groupId);
-    return res.status(200).send({ "data": { "result": "success", "message": "UTR update requested" } });
-})
-
-
-exports.logout = onRequest((req, res) => {
-    console.log("logout function called")
-    console.log("req.body.data: " + JSON.stringify(req.body.data))
-    let body = req.body.data
-    if (body.firebaseId == null) {
-        res.status(400).send("firebaseId is required")
-        return
-    }
-    if (body.deviceName == null) {
-        res.status(400).send("deviceName is required")
-        return
-    }
-    admin.database().ref("approvedNumbers").child(body.firebaseId).child("tokens").child(body.deviceName).remove().then(() => {
-
-        res.status(200).send({ "data": { "result": "success", "message": "logout successful" } })
-    }).catch((error) => {
-        console.log("error: " + error)
-        res.status(400).send({ "data": { "result": "error", "message": error } })
-    })
-})
-
-
-//A notification for an alternate who has been promoted to player due to an RSVP event or for a last minute change.
-exports.sendRSVPUpdateNotification = onRequest(async (req, res) => {
-    console.log("run_rsvpNotification:body " + JSON.stringify(req.body))
-    let firebaseIds = await notifications.run_markNotComingNotification(req.body.data, res)
-    if (firebaseIds != null) {
-        res.status(200).send({ "data": { "result": "success", "message": "notification sent to " + JSON.stringify(firebaseIds) } })
-    } else {
-        res.status(200).send({ "data": { "result": "success", "message": "no firebaseIds found" } })
-    }
-})
-
