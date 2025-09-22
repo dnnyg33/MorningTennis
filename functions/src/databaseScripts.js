@@ -3,8 +3,8 @@
 // ===========================
 const { onRequest } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
-module.exports.addPlayersToResults = addPlayersToResults
-module.exports.migrateAdminIdsToFirebaseIds = migrateAdminIdsToFirebaseIds
+// module.exports.addPlayersToResults = addPlayersToResults
+// module.exports.migrateAdminIdsToFirebaseIds = migrateAdminIdsToFirebaseIds
 // module.exports.migrateAdminIdsToFirebaseIds = migrateAdminIdsToFirebaseIds
 const utilities = require("./utilities");
 
