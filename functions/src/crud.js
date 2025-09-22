@@ -219,10 +219,10 @@ async function approveSetRequest(req, res) {
         return;
     }
     if (setData.verification != null && setData.verification.isVerified == true) {
-        res.send({ "data": { "message": "set already verified" } })
+        res.send({ "message": "set already verified" })
         return;
     } else if (setData.contestation != null && setData.contestation.isContested == true) {
-        res.send({ "data": { "message": "set is contested", "contestedBy": setData.contestation.contestedBy } })
+        res.send({ "message": "set is contested", "contestedBy": setData.contestation.contestedBy })
         return;
     }
     await admin.database().ref("groups-v2").child(data.groupId).child("admins").once('value', (snapshot) => {
@@ -234,18 +234,18 @@ async function approveSetRequest(req, res) {
             isAuthorized = true
         } else {
             console.log("checking if user can approve")
-            if (setData.submittedBy == userId) {
-                res.status(403).send({ "data": { "message": "cannot approve own set" } })
+                if (setData.submittedBy == userId) {
+                res.status(403).send({ "message": "cannot approve own set" })
                 return
             } else if (setData.winners.includes(setData.submittedBy)) {
                 //a loser must approve this set
                 console.log("winner submitted")
                 if (setData.winners.includes(userId)) {
-                    res.status(403).send({ "data": { "message": "cannot approve set submitted by teammate" } })
+                    res.status(403).send({ "message": "cannot approve set submitted by teammate" })
                     return
                 }
                 else if (!setData.losers.includes(userId)) {
-                    res.status(403).send({ "data": { "message": "not part of set" } })
+                    res.status(403).send({ "message": "not part of set" })
                     return
                 } else if (setData.losers.includes(userId)) {
                     console.log("loser is authorized")
@@ -255,17 +255,17 @@ async function approveSetRequest(req, res) {
                 //a winner must approve this set
                 console.log("loser submitted")
                 if (setData.losers.includes(userId)) {
-                    res.status(403).send({ "data": { "message": "cannot approve set submitted by teammate" } })
+                    res.status(403).send({ "message": "cannot approve set submitted by teammate" })
                     return
                 }
                 else if (!setData.winners.includes(userId)) {
-                    res.status(403).send({ "data": { "message": "not part of set" } })
+                    res.status(403).send({ "message": "not part of set" } )
                 } else if (setData.winners.includes(userId)) {
                     console.log("winner is authorized")
                     isAuthorized = true
                 }
             } else if (!setData.winners.includes(userId) && !setData.losers.includes(userId)) {
-                res.status(403).send({ "data": { "message": "not part of set" } })
+                res.status(403).send({ "message": "not part of set" })
                 return
             } else if (setData.winners.concat(setData.losers).includes(userId)) {
                 console.log("possibly admin reported set, but verifier was player")
@@ -280,15 +280,15 @@ async function approveSetRequest(req, res) {
             setData.verification = { isVerified: true, verifiedBy: userId, dateVerified: new Date().getTime() }
             admin.database().ref("sets-v2").child(groupId).child(setId).set(setData)
             await utr.createResultFromSet(setId, setData, groupId);
-            res.status(200).send({ "data": { "message": "set verified", "setData": setData } })
+            res.status(200).send({ "message": "set verified", "setData": setData })
         } else {
             setData.contestation = { isContested: true, contestedBy: userId, dateContested: new Date().getTime() }
             admin.database().ref("sets-v2").child(groupId).child(setId).set(setData)
-            res.status(200).send({ "data": { "message": "set contested", "setData": setData } })
+            res.status(200).send({ "message": "set contested", "setData": setData })
         }
         return;
     }
-    res.status(401).send({ "data": { "message": "User not authorized" } })
+    res.status(401).send({ "message": "User not authorized" })
 }
 
 async function approveJoinRequest(req, res) {
@@ -568,7 +568,7 @@ function deleteAccount(req, res) {
     promises.push(subPromise)
     Promise.all(promises).then(() => {
         console.log("removedLog: " + removedLog)
-        res.send({ "data": { "result": "success", "log": removedLog } })
+        res.send({ "result": "success", "log": removedLog })
     });
 };
 
@@ -576,21 +576,21 @@ async function createGroup(req, res) {
     const body = req.body;
     console.log("body: " + JSON.stringify(body))
     if (body.group == null || body.firebaseId == null || body.publicUserId == null) {
-        res.status(400).send({ "data": { "result": "failure", "reason": "group, firebaseId and publicUserId are required" } })
+        res.status(400).send({ "result": "failure", "reason": "group, firebaseId and publicUserId are required" })
         return;
     }
     //validate properties on group
     if (body.group.name == null || body.group.id == null || body.group.scheduleIsOpen == null
         || body.group.visibility == null || body.group.meetups2 == null || body.group.sortingAlgorithm == null
     ) {
-        res.status(400).send({ "data": { "result": "failure", "reason": "group.name, group.id, group.scheduleIsOpen, group.visibility, group.meetups2 and group.sortingAlgorithm are required" } })
+        res.status(400).send({ "result": "failure", "reason": "group.name, group.id, group.scheduleIsOpen, group.visibility, group.meetups2 and group.sortingAlgorithm are required" })
         return;
     }
     //inspect that all meetups2 are valid
     const validDays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
     for (const meetup of body.group.meetups2) {
-        if (meetup.dayOfWeek == null || meetup.dayOfWeek < 0 || meetup.dayOfWeek > 6 || !validDays.includes(meetup.dayOfWeek)) {
-            res.status(400).send({ "data": { "result": "failure", "reason": "all meetups2 must valid dayOfWeek" } })
+            if (meetup.dayOfWeek == null || meetup.dayOfWeek < 0 || meetup.dayOfWeek > 6 || !validDays.includes(meetup.dayOfWeek)) {
+            res.status(400).send({ "result": "failure", "reason": "all meetups2 must valid dayOfWeek" })
             return;
         }
     }
@@ -619,7 +619,7 @@ async function createGroup(req, res) {
     });
     //create member_ranking for this user
     await admin.database().ref("member_rankings").child(body.group.id).child(body.publicUserId).set({ "utr": 4, "goodwill": 1, 'suspended': false });
-    res.status(200).send({ "data": { "result": "success", "groupId": body.group.id, "group": newGroup } })
+    res.status(200).send({ "result": "success", "groupId": body.group.id, "group": newGroup })
 }
 
 

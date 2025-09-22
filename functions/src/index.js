@@ -120,7 +120,7 @@ v1.post("/requestUTRUpdate", async (req, res) => {
     try {
         const groupId = req.query["groupId"];
         await utr.executeUTRUpdate(groupId);
-        res.status(200).send({ data: { result: "success", message: "UTR update requested" } });
+        res.status(200).send( { result: "success", message: "UTR update requested" } );
     } catch (e) {
         console.error("requestUTRUpdate error", e);
         res.status(500).json({ error: String(e?.message || e) });
@@ -143,10 +143,10 @@ v1.post("/logout", async (req, res) => {
             .child(body.deviceName)
             .remove();
 
-        res.status(200).send({ data: { result: "success", message: "logout successful" } });
+        res.status(200).send({ result: "success", message: "logout successful" } );
     } catch (error) {
         console.log("error:", error);
-        res.status(400).send({ data: { result: "error", message: String(error) } });
+        res.status(400).send({ result: "error", message: String(error) });
     }
 });
 
@@ -157,9 +157,9 @@ v1.post("/sendRSVPUpdateNotification", async (req, res) => {
     if (firebaseIds != null) {
         res
             .status(200)
-            .send({ data: { result: "success", message: "notification sent to " + JSON.stringify(firebaseIds) } });
+            .send({  result: "success", message: "notification sent to " + JSON.stringify(firebaseIds) } );
     } else {
-        res.status(200).send({ data: { result: "success", message: "no firebaseIds found" } });
+        res.status(200).send({ result: "success", message: "no firebaseIds found" });
     }
 });
 
@@ -217,7 +217,7 @@ exports.sortWeekAfterAlgoChange = onValueWritten(
         const groupId = event.params.groupId;
         console.log(`sortingAlgorithm for group ${groupId} changed from ${before} to ${after}`);
 
-        const weekName = createNewWeekDbPath("Monday");
+        const weekName = utilities.createNewWeekDbPath("Monday");
         const incomingSubmissionsData = (
             await admin.database().ref("incoming-v4").child(groupId).child(weekName).get()
         ).val();
@@ -397,7 +397,7 @@ async function run_closeSignup() {
 }
 
 async function cleanupSortedData(groupsData, groupData) {
-    const path = createNewWeekDbPath(groupsData.weekStartDay ?? "Monday");
+    const path = utilities.createNewWeekDbPath(groupsData.weekStartDay ?? "Monday");
     await admin
         .database()
         .ref("sorted-v6")
@@ -443,7 +443,7 @@ function run_openScheduleCommand() {
         for (const [groupId, groupData] of Object.entries(groupsData)) {
             admin.database().ref("groups-v2").child(groupId).child("scheduleIsOpen").set(true);
             const weekStartDay = groupData.weekStartDay ?? "Monday";
-            const path = createNewWeekDbPath(weekStartDay);
+            const path = utilities.createNewWeekDbPath(weekStartDay);
             console.log("Creating empty week for " + groupData.name + " at " + path);
             admin.database().ref("incoming-v4").child(groupId).child(path).child("1").set({
                 firebaseId: "weekStart",
