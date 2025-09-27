@@ -15,6 +15,7 @@ module.exports.inviteUserToGroup = inviteUserToGroup;
 module.exports.deleteAccount = deleteAccount;
 module.exports.deleteGroup = deleteGroup;
 module.exports.createGroup = createGroup;
+module.exports.logout = logout;
 
 
 /**
@@ -161,7 +162,7 @@ async function joinGroupRequest(req, res) {
 
 async function toggleAdmin(req, res) {
     const body = req.body
-    if( body.groupId == null || body.adminId == null || body.userId == null) {
+    if (body.groupId == null || body.adminId == null || body.userId == null) {
         res.status(400).send({ "result": "failure", "reason": "groupId, adminId and userId are required" })
         return;
     }
@@ -234,7 +235,7 @@ async function approveSetRequest(req, res) {
             isAuthorized = true
         } else {
             console.log("checking if user can approve")
-                if (setData.submittedBy == userId) {
+            if (setData.submittedBy == userId) {
                 res.status(403).send({ "message": "cannot approve own set" })
                 return
             } else if (setData.winners.includes(setData.submittedBy)) {
@@ -259,7 +260,7 @@ async function approveSetRequest(req, res) {
                     return
                 }
                 else if (!setData.winners.includes(userId)) {
-                    res.status(403).send({ "message": "not part of set" } )
+                    res.status(403).send({ "message": "not part of set" })
                 } else if (setData.winners.includes(userId)) {
                     console.log("winner is authorized")
                     isAuthorized = true
@@ -351,6 +352,28 @@ async function approveJoinRequest(req, res) {
         }
     });
 };
+
+async function logout(req, res) {
+    try {
+        console.log("logout function called");
+        let body = req.body ?? {};
+        if (!body.firebaseId) return res.status(400).send("firebaseId is required");
+        if (!body.deviceName) return res.status(400).send("deviceName is required");
+
+        await admin
+            .database()
+            .ref("approvedNumbers")
+            .child(body.firebaseId)
+            .child("tokens")
+            .child(body.deviceName)
+            .remove();
+
+        res.status(200).send({ result: "success", message: "logout successful" });
+    } catch (error) {
+        console.log("error:", error);
+        res.status(400).send({ result: "error", message: String(error) });
+    }
+}
 
 
 /**
@@ -589,7 +612,7 @@ async function createGroup(req, res) {
     //inspect that all meetups2 are valid
     const validDays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"]
     for (const meetup of body.group.meetups2) {
-            if (meetup.dayOfWeek == null || meetup.dayOfWeek < 0 || meetup.dayOfWeek > 6 || !validDays.includes(meetup.dayOfWeek)) {
+        if (meetup.dayOfWeek == null || meetup.dayOfWeek < 0 || meetup.dayOfWeek > 6 || !validDays.includes(meetup.dayOfWeek)) {
             res.status(400).send({ "result": "failure", "reason": "all meetups2 must valid dayOfWeek" })
             return;
         }

@@ -17,6 +17,7 @@ const notifications = require("./notifications.js");
 const crud = require("./crud.js");
 const utr = require("./utr_updates.js");
 const dbScripts = require("./databaseScripts.js");
+const utilities = require("./utilities.js");
 
 // If you define helpers like createNewWeekDbPath here, keep them.
 // Otherwise ensure you import them from wherever they live.
@@ -115,40 +116,6 @@ v1.post("/testSort", async (req, res) => {
     }
 });
 
-// POST /v1/requestUTRUpdate
-v1.post("/requestUTRUpdate", async (req, res) => {
-    try {
-        const groupId = req.query["groupId"];
-        await utr.executeUTRUpdate(groupId);
-        res.status(200).send( { result: "success", message: "UTR update requested" } );
-    } catch (e) {
-        console.error("requestUTRUpdate error", e);
-        res.status(500).json({ error: String(e?.message || e) });
-    }
-});
-
-// POST /v1/logout
-v1.post("/logout", async (req, res) => {
-    try {
-        console.log("logout function called");
-        let body = req.body ?? {};
-        if (!body.firebaseId) return res.status(400).send("firebaseId is required");
-        if (!body.deviceName) return res.status(400).send("deviceName is required");
-
-        await admin
-            .database()
-            .ref("approvedNumbers")
-            .child(body.firebaseId)
-            .child("tokens")
-            .child(body.deviceName)
-            .remove();
-
-        res.status(200).send({ result: "success", message: "logout successful" } );
-    } catch (error) {
-        console.log("error:", error);
-        res.status(400).send({ result: "error", message: String(error) });
-    }
-});
 
 // POST /v1/sendRSVPUpdateNotification
 v1.post("/sendRSVPUpdateNotification", async (req, res) => {
@@ -179,6 +146,37 @@ v1.post("/deleteAccount", (req, res) => crud.deleteAccount(req, res));
 v1.post("/deleteGroup", (req, res) => crud.deleteGroup(req, res));
 v1.post("/createGroup", (req, res) => crud.createGroup(req, res));
 v1.post("/inviteUserToGroup", (req, res) => crud.inviteUserToGroup(req, res));
+v1.post("/logout", (req, res) => crud.logout(req, res));
+
+// expose scheduled and pub/sub functions for running via HTTP
+v1.post("/requestUTRUpdate", async (req, res) => {
+    try {
+        const groupId = req.query["groupId"];
+        await utr.executeUTRUpdate(groupId);
+        res.status(200).send( { result: "success", message: "UTR update requested" } );
+    } catch (e) {
+        console.error("requestUTRUpdate error", e);
+        res.status(500).json({ error: String(e?.message || e) });
+    }
+});
+v1.post("/run_openScheduleCommand", async (req, res) => {
+    try {
+        run_openScheduleCommand();
+        res.status(200).send( { result: "success", message: "open schedule command executed" } );
+    } catch (e) {
+        console.error("run_openScheduleCommand error", e);
+        res.status(500).json({ error: String(e?.message || e) });
+    }
+});
+v1.post("/run_closeSignup", async (req, res) => {
+    try {
+        await run_closeSignup();
+        res.status(200).send( { result: "success", message: "close signup command executed" } );
+    } catch (e) {
+        console.error("run_closeSignup error", e);
+        res.status(500).json({ error: String(e?.message || e) });
+    }
+});
 
 // Mount versions
 app.use("/v1", v1);
