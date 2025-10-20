@@ -147,6 +147,10 @@ async function sendNotificationsToGroup(message, registrationTokens) {
     console.log("Sending message (dryRun="+dryRun+"):")
     console.log("tokens:")
     console.log(registrationTokens)
+    if (registrationTokens.length == 0) {
+        console.log("No registration tokens, aborting send")
+        return
+    }
     console.log("message:")
     console.log(message)
     await admin.messaging().sendEachForMulticast(message = message, dryRun = dryRun)
