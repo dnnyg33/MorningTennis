@@ -18,6 +18,7 @@ const crud = require("./crud.js");
 const utr = require("./utr_updates.js");
 const dbScripts = require("./databaseScripts.js");
 const tabs = require("./tabs.js");
+const utilities = require("./utilities.js");
 
 // If you define helpers like createNewWeekDbPath here, keep them.
 // Otherwise ensure you import them from wherever they live.
@@ -116,40 +117,6 @@ v1.post("/testSort", async (req, res) => {
     }
 });
 
-// POST /v1/requestUTRUpdate
-v1.post("/requestUTRUpdate", async (req, res) => {
-    try {
-        const groupId = req.query["groupId"];
-        await utr.executeUTRUpdate(groupId);
-        res.status(200).send({ data: { result: "success", message: "UTR update requested" } });
-    } catch (e) {
-        console.error("requestUTRUpdate error", e);
-        res.status(500).json({ error: String(e?.message || e) });
-    }
-});
-
-// POST /v1/logout
-v1.post("/logout", async (req, res) => {
-    try {
-        console.log("logout function called");
-        let body = req.body ?? {};
-        if (!body.firebaseId) return res.status(400).send("firebaseId is required");
-        if (!body.deviceName) return res.status(400).send("deviceName is required");
-
-        await admin
-            .database()
-            .ref("approvedNumbers")
-            .child(body.firebaseId)
-            .child("tokens")
-            .child(body.deviceName)
-            .remove();
-
-        res.status(200).send({ data: { result: "success", message: "logout successful" } });
-    } catch (error) {
-        console.log("error:", error);
-        res.status(400).send({ data: { result: "error", message: String(error) } });
-    }
-});
 
 // POST /v1/sendRSVPUpdateNotification
 v1.post("/sendRSVPUpdateNotification", async (req, res) => {
@@ -158,9 +125,9 @@ v1.post("/sendRSVPUpdateNotification", async (req, res) => {
     if (firebaseIds != null) {
         res
             .status(200)
-            .send({ data: { result: "success", message: "notification sent to " + JSON.stringify(firebaseIds) } });
+            .send({  result: "success", message: "notification sent to " + JSON.stringify(firebaseIds) } );
     } else {
-        res.status(200).send({ data: { result: "success", message: "no firebaseIds found" } });
+        res.status(200).send({ result: "success", message: "no firebaseIds found" });
     }
 });
 
@@ -191,6 +158,37 @@ v1.post("/deleteAccount", (req, res) => crud.deleteAccount(req, res));
 v1.post("/deleteGroup", (req, res) => crud.deleteGroup(req, res));
 v1.post("/createGroup", (req, res) => crud.createGroup(req, res));
 v1.post("/inviteUserToGroup", (req, res) => crud.inviteUserToGroup(req, res));
+v1.post("/logout", (req, res) => crud.logout(req, res));
+
+// expose scheduled and pub/sub functions for running via HTTP
+v1.post("/requestUTRUpdate", async (req, res) => {
+    try {
+        const groupId = req.query["groupId"];
+        await utr.executeUTRUpdate(groupId);
+        res.status(200).send( { result: "success", message: "UTR update requested" } );
+    } catch (e) {
+        console.error("requestUTRUpdate error", e);
+        res.status(500).json({ error: String(e?.message || e) });
+    }
+});
+v1.post("/run_openScheduleCommand", async (req, res) => {
+    try {
+        run_openScheduleCommand();
+        res.status(200).send( { result: "success", message: "open schedule command executed" } );
+    } catch (e) {
+        console.error("run_openScheduleCommand error", e);
+        res.status(500).json({ error: String(e?.message || e) });
+    }
+});
+v1.post("/run_closeSignup", async (req, res) => {
+    try {
+        await run_closeSignup();
+        res.status(200).send( { result: "success", message: "close signup command executed" } );
+    } catch (e) {
+        console.error("run_closeSignup error", e);
+        res.status(500).json({ error: String(e?.message || e) });
+    }
+});
 
 // Mount versions
 app.use("/v1", v1);
@@ -229,7 +227,7 @@ exports.sortWeekAfterAlgoChange = onValueWritten(
         const groupId = event.params.groupId;
         console.log(`sortingAlgorithm for group ${groupId} changed from ${before} to ${after}`);
 
-        const weekName = createNewWeekDbPath("Monday");
+        const weekName = utilities.createNewWeekDbPath("Monday");
         const incomingSubmissionsData = (
             await admin.database().ref("incoming-v4").child(groupId).child(weekName).get()
         ).val();
@@ -409,7 +407,7 @@ async function run_closeSignup() {
 }
 
 async function cleanupSortedData(groupsData, groupData) {
-    const path = createNewWeekDbPath(groupsData.weekStartDay ?? "Monday");
+    const path = utilities.createNewWeekDbPath(groupsData.weekStartDay ?? "Monday");
     await admin
         .database()
         .ref("sorted-v6")
@@ -455,56 +453,12 @@ function run_openScheduleCommand() {
         for (const [groupId, groupData] of Object.entries(groupsData)) {
             admin.database().ref("groups-v2").child(groupId).child("scheduleIsOpen").set(true);
             const weekStartDay = groupData.weekStartDay ?? "Monday";
-            const path = createNewWeekDbPath(weekStartDay);
+            const path = utilities.createNewWeekDbPath(weekStartDay);
             console.log("Creating empty week for " + groupData.name + " at " + path);
             admin.database().ref("incoming-v4").child(groupId).child(path).child("1").set({
                 firebaseId: "weekStart",
             });
         }
     }
+
 }
-
-///TODO remove all old functions once new app version is released so that update to node 20 can be done.
-
-//adhoc function to update UTRs
-exports.requestUTRUpdate = onRequest(async (req, res) => {
-    //get groupId from path
-    const groupId = req.query["groupId"];
-    await utr.executeUTRUpdate(groupId);
-    return res.status(200).send({ "data": { "result": "success", "message": "UTR update requested" } });
-})
-
-
-exports.logout = onRequest((req, res) => {
-    console.log("logout function called")
-    console.log("req.body.data: " + JSON.stringify(req.body.data))
-    let body = req.body.data
-    if (body.firebaseId == null) {
-        res.status(400).send("firebaseId is required")
-        return
-    }
-    if (body.deviceName == null) {
-        res.status(400).send("deviceName is required")
-        return
-    }
-    admin.database().ref("approvedNumbers").child(body.firebaseId).child("tokens").child(body.deviceName).remove().then(() => {
-
-        res.status(200).send({ "data": { "result": "success", "message": "logout successful" } })
-    }).catch((error) => {
-        console.log("error: " + error)
-        res.status(400).send({ "data": { "result": "error", "message": error } })
-    })
-})
-
-
-//A notification for an alternate who has been promoted to player due to an RSVP event or for a last minute change.
-exports.sendRSVPUpdateNotification = onRequest(async (req, res) => {
-    console.log("run_rsvpNotification:body " + JSON.stringify(req.body))
-    let firebaseIds = await notifications.run_markNotComingNotification(req.body.data, res)
-    if (firebaseIds != null) {
-        res.status(200).send({ "data": { "result": "success", "message": "notification sent to " + JSON.stringify(firebaseIds) } })
-    } else {
-        res.status(200).send({ "data": { "result": "success", "message": "no firebaseIds found" } })
-    }
-})
-
