@@ -17,6 +17,7 @@ const notifications = require("./notifications.js");
 const crud = require("./crud.js");
 const utr = require("./utr_updates.js");
 const dbScripts = require("./databaseScripts.js");
+const tabs = require("./tabs.js");
 const utilities = require("./utilities.js");
 
 // If you define helpers like createNewWeekDbPath here, keep them.
@@ -133,6 +134,17 @@ v1.post("/sendRSVPUpdateNotification", async (req, res) => {
 // POST /v1/db/addPlayersToResults
 v1.post("/db/addPlayersToResults", async (req, res) => {
     await dbScripts.addPlayersToResults(req, res);
+});
+
+v1.post("/tabReport", async (req, res) => {
+    try {
+        const { startDate, endDate, groupId, sortingAlgorithm, playerIndexBound } = req.body;
+        const report = await tabs.generateTabReport(startDate, endDate, groupId, sortingAlgorithm, playerIndexBound);
+        res.status(200).send({ data: { result: "success", report } });
+    } catch (e) {
+        console.error("tabReport error", e);
+        res.status(500).json({ error: String(e?.message || e) });
+    }
 });
 
 // CRUD routes
