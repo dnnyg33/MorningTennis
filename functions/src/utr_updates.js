@@ -13,7 +13,7 @@ async function executeUTRUpdate(requestedGroupId) {
                 console.log("\n\nCalculating UTRs for group " + groupId);
                 for (const [firebaseId, ranking] of Object.entries(group)) {
                     console.log("Existing ranking for " + firebaseId + ": " + JSON.stringify(ranking));
-                    let newUtr = await calculateUTR(firebaseId, ranking.utr);
+                    let newUtr = await calculateUTR(firebaseId, ranking.utr, ranking.isLocked === true);
                     if (newUtr == -1) {
                         continue;
                     }
@@ -24,7 +24,11 @@ async function executeUTRUpdate(requestedGroupId) {
     });
 }
 
-async function calculateUTR(firebaseId, utr) {
+async function calculateUTR(firebaseId, utr, isLocked) {
+    if (isLocked) {
+        console.log("UTR is locked for " + firebaseId + ", skipping update.");
+        return utr
+    }
     let matchHistorySnapshot = await admin.database().ref('results-v2').child(firebaseId).once('value', async (snapshot) => {
         const data = snapshot.val()
         if (data == null) {
