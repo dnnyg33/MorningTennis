@@ -503,7 +503,7 @@ async function modifyGroupMember(req, res) {
             .ref("member_rankings")
             .child(body.groupId)
             .child(body.firebaseId)
-            .update({ utr: body.utr, goodwill: body.goodwill, suspended: body.suspended });
+            .update({ utr: body.utr, goodwill: body.goodwill, suspended: body.suspended, lockUtr: body.lockUtr });
 
         return res.status(200).json({ groupId: body.groupId, userPublicId: body.userPublicId, message: "User updated" });
     } catch (err) {
