@@ -136,6 +136,11 @@ v1.post("/db/addPlayersToResults", async (req, res) => {
     await dbScripts.addPlayersToResults(req, res);
 });
 
+// POST /v1/db/populateMemberCount
+v1.post("/db/populateMemberCount", async (req, res) => {
+    await dbScripts.populateMemberCount(req, res);
+});
+
 v1.post("/tabReport", async (req, res) => {
     try {
         const { startDate, endDate, groupId, sortingAlgorithm, playerIndexBound } = req.body;
@@ -158,6 +163,7 @@ v1.post("/deleteAccount", (req, res) => crud.deleteAccount(req, res));
 v1.post("/deleteGroup", (req, res) => crud.deleteGroup(req, res));
 v1.post("/createGroup", (req, res) => crud.createGroup(req, res));
 v1.post("/inviteUserToGroup", (req, res) => crud.inviteUserToGroup(req, res));
+v1.post("/removePlayerFromGroup", (req, res) => crud.removePlayerFromGroup(req, res));
 v1.post("/logout", (req, res) => crud.logout(req, res));
 
 // expose scheduled and pub/sub functions for running via HTTP
@@ -365,12 +371,12 @@ async function runSort(groupId, incomingSubmissionsData, weekName) {
             const algorithm = groupData.sortingAlgorithm;
             console.log("running " + algorithm + " algorithm for group: " + groupId);
 
-            if (groupId === "provo" || groupId === "test") {
-                sortingBalanceSkill.runSort(incomingSubmissionsData, groupId, weekName);
-                sortingTimePreference.runSort(incomingSubmissionsData, groupId, weekName);
-                sortingFullAvailability.runSort(incomingSubmissionsData, groupId, weekName);
-                sortingWhenIsGood.runSort(incomingSubmissionsData, groupId, weekName);
-            } else {
+            // if (groupId === "provo" || groupId === "test") {
+            //     sortingBalanceSkill.runSort(incomingSubmissionsData, groupId, weekName);
+            //     sortingTimePreference.runSort(incomingSubmissionsData, groupId, weekName);
+            //     sortingFullAvailability.runSort(incomingSubmissionsData, groupId, weekName);
+            //     sortingWhenIsGood.runSort(incomingSubmissionsData, groupId, weekName);
+            // } else {
                 if (algorithm === "balanceSkill") {
                     sortingBalanceSkill.runSort(incomingSubmissionsData, groupId, weekName);
                 } else if (algorithm === "timePreference") {
@@ -382,7 +388,7 @@ async function runSort(groupId, incomingSubmissionsData, weekName) {
                 } else {
                     console.log("No algorithm found for group " + groupId);
                 }
-            }
+            // }
 
             admin.database().ref("groups-v2").child(groupId).child("scheduleIsBuilding").set(false);
         });

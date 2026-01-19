@@ -16,6 +16,7 @@ module.exports.deleteAccount = deleteAccount;
 module.exports.deleteGroup = deleteGroup;
 module.exports.createGroup = createGroup;
 module.exports.logout = logout;
+module.exports.removePlayerFromGroup = removePlayerFromGroup;
 
 
 /**
@@ -140,7 +141,7 @@ async function joinGroupRequest(req, res) {
     }).catch((error) => { console.error(error); res.send(500, { "result": "failure", "reason": error }); });
 
     function addGroupToUser() {
-        admin.database().ref("approvedNumbers").child(body.userId).child('groups').once('value', (snapshotGroups) => {
+        admin.database().ref("approvedNumbers").child(body.userId).child('groups').once('value', async (snapshotGroups) => {
             var groups = snapshotGroups.val();
             if (groups == null) {
                 groups = [];
@@ -153,6 +154,12 @@ async function joinGroupRequest(req, res) {
 
                 groups.push(body.groupId);
                 admin.database().ref("approvedNumbers").child(body.userId).child("groups").set(groups);
+
+                // Increment memberCount
+                const memberCountRef = admin.database().ref("groups-v2").child(body.groupId).child("memberCount");
+                const currentCount = (await memberCountRef.get()).val() || 0;
+                await memberCountRef.set(currentCount + 1);
+
                 res.send({ "result": "success" });
             }
         });
@@ -327,6 +334,12 @@ async function approveJoinRequest(req, res) {
             } else {
                 userGroups.push(body.groupId)
                 admin.database().ref("approvedNumbers").child(joinRequest.userId).child("groups").set(userGroups)
+
+                // Increment memberCount
+                const memberCountRef = admin.database().ref("groups-v2").child(body.groupId).child("memberCount");
+                const currentCount = (await memberCountRef.get()).val() || 0;
+                await memberCountRef.set(currentCount + 1);
+
                 res.send({ "result": "success", "userGroups": userGroups })
             }
 
@@ -413,7 +426,7 @@ async function inviteUserToGroup(req, res) {
             return;
         }
     }).then(() => {
-        admin.database().ref("approvedNumbers").once('value', (snapshot) => {
+        admin.database().ref("approvedNumbers").once('value', async (snapshot) => {
             const users = snapshot.val()
             var foundUser = false
             for (const [key, user] of Object.entries(users)) {
@@ -424,6 +437,12 @@ async function inviteUserToGroup(req, res) {
                         user.groups = [body.groupId]
                         console.log("User updated with group: " + JSON.stringify(user))
                         admin.database().ref("approvedNumbers").child(key).update(user)
+
+                        // Increment memberCount
+                        const memberCountRef = admin.database().ref("groups-v2").child(body.groupId).child("memberCount");
+                        const currentCount = (await memberCountRef.get()).val() || 0;
+                        await memberCountRef.set(currentCount + 1);
+
                         res.status(200).send({ "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "Existing user added to first group" })
                     } else if (user.groups.includes(body.groupId)) {
                         res.status(200).send({ "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "User already in group" })
@@ -431,6 +450,12 @@ async function inviteUserToGroup(req, res) {
                         user.groups.push(body.groupId)
                         console.log(user.groups)
                         admin.database().ref("approvedNumbers").child(key).update(user)
+
+                        // Increment memberCount
+                        const memberCountRef = admin.database().ref("groups-v2").child(body.groupId).child("memberCount");
+                        const currentCount = (await memberCountRef.get()).val() || 0;
+                        await memberCountRef.set(currentCount + 1);
+
                         res.status(200).send({ "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "Existing user added to new group" })
                     }
                     //create member_ranking for this user
@@ -516,6 +541,80 @@ async function modifyGroupMember(req, res) {
     }
 }
 
+/**
+ * Removes a player from a group. Only an admin of the group can remove a player.
+ * @param groupId - the group to remove the player from
+ * @param adminId - the admin performing the removal
+ * @param firebaseId - the firebaseId of the player to remove
+ */
+async function removePlayerFromGroup(req, res) {
+    try {
+        const body = req.body;
+        console.log("removePlayerFromGroup body:", JSON.stringify(body));
+
+        if (!body.groupId) {
+            return res.status(400).json({ message: "groupId is required" });
+        }
+        if (!body.adminId) {
+            return res.status(400).json({ message: "adminId is required" });
+        }
+        if (!body.firebaseId) {
+            return res.status(400).json({ message: "firebaseId is required" });
+        }
+
+        const db = admin.database();
+        const adminId = await utilities.sanitizeUserIdToFirebaseId(body.adminId);
+
+        // Verify admin
+        const adminsSnap = await db.ref('groups-v2').child(body.groupId).child('admins').once('value');
+        const adminList = adminsSnap.val() || {};
+
+        const isAdmin = Object.values(adminList).some(v => v === adminId);
+        if (!isAdmin) {
+            return res.status(403).json({ message: "adminId is not an admin of this group" });
+        }
+
+        // Check if removing an admin (not allowed if they're the only admin)
+        const playerIsAdmin = Object.values(adminList).some(v => v === body.firebaseId);
+        const adminCount = Object.values(adminList).filter(v => !v.endsWith("_deleted")).length;
+        if (playerIsAdmin && adminCount <= 1) {
+            return res.status(400).json({ message: "Cannot remove the only admin. Transfer admin rights first." });
+        }
+
+        // Remove group from user's groups array
+        const userGroupsSnap = await db.ref("approvedNumbers").child(body.firebaseId).child("groups").once('value');
+        const userGroups = userGroupsSnap.val() || [];
+        const newGroups = userGroups.filter(g => g !== body.groupId);
+        await db.ref("approvedNumbers").child(body.firebaseId).child("groups").set(newGroups);
+
+        // Remove member_rankings entry
+        await db.ref("member_rankings").child(body.groupId).child(body.firebaseId).remove();
+
+        // If player was admin, mark them as deleted in admin list
+        if (playerIsAdmin) {
+            for (const [key, value] of Object.entries(adminList)) {
+                if (value === body.firebaseId) {
+                    await db.ref("groups-v2").child(body.groupId).child("admins").child(key).set(value + "_deleted");
+                }
+            }
+        }
+
+        // Decrement memberCount
+        const memberCountRef = db.ref("groups-v2").child(body.groupId).child("memberCount");
+        const currentCount = (await memberCountRef.get()).val() || 0;
+        if (currentCount > 0) {
+            await memberCountRef.set(currentCount - 1);
+        }
+
+        return res.status(200).json({ result: "success", message: "Player removed from group" });
+    } catch (err) {
+        console.error("removePlayerFromGroup error:", err);
+        if (!res.headersSent) {
+            return res.status(500).json({ message: "Internal server error" });
+        }
+    }
+}
+
 function deleteAccount(req, res) {
     const body = req.body
 
@@ -530,7 +629,7 @@ function deleteAccount(req, res) {
             user.groups.forEach(group => {
                 console.log("group: " + group)
                 //remove as admin
-                const adminPromise = db.ref("groups-v2").child(group).child("admins").once('value', (snapshot) => {
+                const adminPromise = db.ref("groups-v2").child(group).child("admins").once('value', async (snapshot) => {
                     //if group only has 1 admin, delete group
                     const adminList = snapshot.val()
                     if (adminList.length == 1) {
@@ -549,6 +648,13 @@ function deleteAccount(req, res) {
                             removedLog.push("groups-v2." + group + ".admins." + key)
                             db.ref("groups-v2").child(group).child("admins").set(adminList)
                         }
+                    }
+
+                    // Decrement memberCount (only if group wasn't deleted)
+                    const memberCountRef = db.ref("groups-v2").child(group).child("memberCount");
+                    const currentCount = (await memberCountRef.get()).val() || 0;
+                    if (currentCount > 0) {
+                        await memberCountRef.set(currentCount - 1);
                     }
                 })
                 promises.push(adminPromise)

@@ -191,3 +191,46 @@ async function migrateAdminIdsToFirebaseIds(_req, res) {
         res.status(500).send(String(err?.message || err));
     }
 };
+
+async function populateMemberCount(_req, res) {
+    try {
+        const groupsSnap = await admin.database().ref("groups-v2").get();
+        const groups = groupsSnap.val() || {};
+
+        const usersSnap = await admin.database().ref("approvedNumbers").get();
+        const users = usersSnap.val() || {};
+
+        // Count members per group from approvedNumbers
+        const memberCounts = {};
+        for (const groupId of Object.keys(groups)) {
+            memberCounts[groupId] = 0;
+        }
+
+        for (const [userId, user] of Object.entries(users)) {
+            const userGroups = user.groups || [];
+            for (const groupId of userGroups) {
+                if (memberCounts[groupId] !== undefined) {
+                    memberCounts[groupId]++;
+                }
+            }
+        }
+
+        const updates = {};
+        for (const [groupId, count] of Object.entries(memberCounts)) {
+            console.log(`Group ${groupId}: ${count} members`);
+            updates[`groups-v2/${groupId}/memberCount`] = count;
+        }
+
+        if (Object.keys(updates).length > 0) {
+            await admin.database().ref().update(updates);
+            console.log(`Updated memberCount for ${Object.keys(updates).length} groups`);
+        }
+
+        res.end(`Done. Updated ${Object.keys(updates).length} groups.`);
+    } catch (err) {
+        console.error("populateMemberCount error:", err);
+        res.status(500).send(String(err?.message || err));
+    }
+}
+
+exports.populateMemberCount = populateMemberCount;
