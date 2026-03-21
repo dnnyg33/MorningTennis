@@ -234,3 +234,40 @@ async function populateMemberCount(_req, res) {
 }
 
 exports.populateMemberCount = populateMemberCount;
+
+async function deleteEmptyGroups(_req, res) {
+    try {
+        const groupsSnap = await admin.database().ref("groups-v2").get();
+        const groups = groupsSnap.val() || {};
+
+        const usersSnap = await admin.database().ref("approvedNumbers").get();
+        const users = usersSnap.val() || {};
+
+        // Build set of groupIds that have at least one player
+        const groupsWithPlayers = new Set();
+        for (const user of Object.values(users)) {
+            for (const groupId of (user.groups || [])) {
+                groupsWithPlayers.add(groupId);
+            }
+        }
+
+        const deleted = [];
+        for (const groupId of Object.keys(groups)) {
+            if (groupsWithPlayers.has(groupId)) continue;
+
+            console.log(`Deleting empty group: ${groupId}`);
+            // await admin.database().ref("groups-v2").child(groupId).remove();
+            // await admin.database().ref("member_rankings").child(groupId).remove();
+            // await admin.database().ref("joinRequests").child(groupId).remove();
+            deleted.push(groupId);
+        }
+
+        console.log(`Deleted ${deleted.length} empty groups.`);
+        res.end(`Done. Deleted ${deleted.length} empty groups: ${JSON.stringify(deleted)}`);
+    } catch (err) {
+        console.error("deleteEmptyGroups error:", err);
+        res.status(500).send(String(err?.message || err));
+    }
+}
+
+exports.deleteEmptyGroups = deleteEmptyGroups;

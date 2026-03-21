@@ -141,6 +141,11 @@ v1.post("/db/populateMemberCount", async (req, res) => {
     await dbScripts.populateMemberCount(req, res);
 });
 
+// POST /v1/db/deleteEmptyGroups
+v1.post("/db/deleteEmptyGroups", async (req, res) => {
+    await dbScripts.deleteEmptyGroups(req, res);
+});
+
 v1.post("/tabReport", async (req, res) => {
     try {
         const { startDate, endDate, groupId, sortingAlgorithm, playerIndexBound } = req.body;
