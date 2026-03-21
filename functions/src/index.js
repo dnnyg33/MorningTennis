@@ -355,6 +355,13 @@ exports.scheduleOpenNotification = onSchedule(
     },
 );
 
+exports.scheduleDeleteEmptyGroups = onSchedule(
+    { schedule: "0 3 * * MON", timeZone: "America/Denver" },
+    async () => {
+        await dbScripts.runDeleteEmptyGroups();
+    },
+);
+
 // ===========================
 // Helpers (unchanged logic)
 // ===========================
