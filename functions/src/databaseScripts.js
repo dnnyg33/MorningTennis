@@ -256,9 +256,9 @@ async function deleteEmptyGroups(_req, res) {
             if (groupsWithPlayers.has(groupId)) continue;
 
             console.log(`Deleting empty group: ${groupId}`);
-            // await admin.database().ref("groups-v2").child(groupId).remove();
-            // await admin.database().ref("member_rankings").child(groupId).remove();
-            // await admin.database().ref("joinRequests").child(groupId).remove();
+            await admin.database().ref("groups-v2").child(groupId).remove();
+            await admin.database().ref("member_rankings").child(groupId).remove();
+            await admin.database().ref("joinRequests").child(groupId).remove();
             deleted.push(groupId);
         }
 
