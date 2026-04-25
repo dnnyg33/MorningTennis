@@ -146,6 +146,11 @@ v1.post("/db/deleteEmptyGroups", async (req, res) => {
     await dbScripts.deleteEmptyGroups(req, res);
 });
 
+// POST /v1/db/autoApproveStaleSets
+v1.post("/db/autoApproveStaleSets", async (req, res) => {
+    await dbScripts.autoApproveStaleSets(utr, req, res);
+});
+
 v1.post("/tabReport", async (req, res) => {
     try {
         const { startDate, endDate, groupId, sortingAlgorithm, playerIndexBound } = req.body;
@@ -359,6 +364,13 @@ exports.scheduleDeleteEmptyGroups = onSchedule(
     { schedule: "0 3 * * FRI", timeZone: "America/Denver" },
     async () => {
         await dbScripts.runDeleteEmptyGroups();
+    },
+);
+
+exports.scheduleAutoApproveStaleSets = onSchedule(
+    { schedule: "00 8 * * FRI", timeZone: "America/Denver" },
+    async () => {
+        await dbScripts.runAutoApproveStaleSets(utr);
     },
 );
 

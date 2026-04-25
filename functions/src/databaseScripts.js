@@ -277,3 +277,48 @@ async function deleteEmptyGroups(_req, res) {
 
 exports.deleteEmptyGroups = deleteEmptyGroups;
 exports.runDeleteEmptyGroups = runDeleteEmptyGroups;
+
+async function runAutoApproveStaleSets(utr) {
+    const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - ONE_WEEK_MS;
+
+    const groupsSnap = await admin.database().ref("groups-v2").get();
+    const groups = groupsSnap.val() || {};
+
+    let approved = 0;
+    for (const groupId of Object.keys(groups)) {
+        const setsSnap = await admin.database().ref("sets-v2").child(groupId).get();
+        const sets = setsSnap.val() || {};
+
+        for (const [setId, setData] of Object.entries(sets)) {
+            const alreadyVerified = setData.verification?.isVerified === true;
+            const isContested = setData.contestation?.isContested === true;
+            const isStale = setData.timestamp != null && setData.timestamp < cutoff;
+
+            if (alreadyVerified || isContested || !isStale) continue;
+
+            console.log(`Auto-approving stale set ${setId} in group ${groupId} (timestamp: ${setData.timestamp})`);
+            setData.verification = { isVerified: true, verifiedBy: "auto", dateVerified: Date.now() };
+            await admin.database().ref("sets-v2").child(groupId).child(setId).set(setData);
+            await utr.createResultFromSet(setId, setData, groupId);
+            approved++;
+        }
+    }
+
+    console.log(`Auto-approved ${approved} stale sets.`);
+    return approved;
+}
+
+exports.runAutoApproveStaleSets = runAutoApproveStaleSets;
+
+async function autoApproveStaleSets(utr, _req, res) {
+    try {
+        const approved = await runAutoApproveStaleSets(utr);
+        res.end(`Done. Auto-approved ${approved} stale sets.`);
+    } catch (err) {
+        console.error("autoApproveStaleSets error:", err);
+        res.status(500).send(String(err?.message || err));
+    }
+}
+
+exports.autoApproveStaleSets = autoApproveStaleSets;
