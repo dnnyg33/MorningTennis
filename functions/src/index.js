@@ -422,6 +422,7 @@ async function run_closeSignup() {
     await admin.database().ref("groups-v2").once("value", async (snapshot) => {
         const groupsData = snapshot.val();
         for (const [groupName, groupData] of Object.entries(groupsData)) {
+            if(groupData.sortingAlgorithm === "whenIsGood") continue; // skip closing for whenIsGood since players can join late and it doesn't affect sorting
             console.log("closing schedule for " + groupName + ": " + groupData.name);
             admin.database().ref("groups-v2").child(groupName).child("scheduleIsOpen").set(false);
             if (groupData.sortingAlgorithm === "balanceSkill") {
