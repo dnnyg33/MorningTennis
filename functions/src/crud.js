@@ -51,6 +51,9 @@ function createUser(req, res) {
                 serverUser.lastVisited = new Date().toLocaleString('en-US', { timeZone: 'America/Denver' });
                 serverUser.firebaseId = key;
                 serverUser.appVersion = body.appVersion;
+                serverUser.name = body.name; //update name in case it was changed
+                console.log('body.name: ' + body.name)
+                console.log('server.name: ' + serverUser.name)
                 console.log("serverUser: " + JSON.stringify(serverUser))
                 console.log("key: " + key)
                 admin.database().ref("approvedNumbers").child(key).update(serverUser);
