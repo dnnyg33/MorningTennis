@@ -52,6 +52,8 @@ function createUser(req, res) {
                 serverUser.firebaseId = key;
                 serverUser.appVersion = body.appVersion;
                 serverUser.name = body.name; //update name in case it was changed
+                //update location if provided, otherwise keep whatever is already stored
+                serverUser.location = body.location ?? serverUser.location ?? null;
                 console.log('body.name: ' + body.name)
                 console.log('server.name: ' + serverUser.name)
                 console.log("serverUser: " + JSON.stringify(serverUser))
@@ -85,6 +87,7 @@ function createUser(req, res) {
             name: body.name,
             email: body.email ?? null,
             phoneNumber: body.phoneNumber ?? null,
+            location: body.location ?? null,
             firebaseId: body.firebaseId,
             groups: preExistingGroups,
         };
