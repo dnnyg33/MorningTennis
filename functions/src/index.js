@@ -18,6 +18,8 @@ const crud = require("./crud.js");
 const utr = require("./utr_updates.js");
 const dbScripts = require("./databaseScripts.js");
 const tabs = require("./tabs.js");
+const ladder = require("./ladder.js");
+const ladderMatches = require("./ladder_matches.js");
 const utilities = require("./utilities.js");
 
 // If you define helpers like createNewWeekDbPath here, keep them.
@@ -161,6 +163,11 @@ v1.post("/tabReport", async (req, res) => {
         res.status(500).json({ error: String(e?.message || e) });
     }
 });
+
+// Ladder routes
+v1.post("/ladderStandings", (req, res) => ladder.ladderStandings(req, res));
+v1.post("/reportLadderMatch", (req, res) => ladderMatches.reportLadderMatch(req, res));
+v1.post("/deleteLadderMatch", (req, res) => ladderMatches.deleteLadderMatch(req, res));
 
 // CRUD routes
 v1.post("/createUser", (req, res) => crud.createUser(req, res));
