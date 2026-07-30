@@ -10,6 +10,7 @@ module.exports.summarizeSets = summarizeSets;
 const LADDER_MATCHES = "ladder_matches"; // ladder_matches/{groupId}/{seasonId}/{matchId}
 const GROUPS = "groups-v2";
 const USERS = "approvedNumbers";
+const MEMBER_RANKINGS = "member_rankings"; // member_rankings/{groupId}/{firebaseId}/suspended
 
 const MAX_SETS = 5;
 
@@ -57,6 +58,13 @@ async function reportLadderMatch(req, res) {
         const group = (await admin.database().ref(GROUPS).child(groupId).get()).val();
         if (group == null) {
             res.status(404).send({ error: "We couldn't find that group." });
+            return;
+        }
+
+        // A suspended member can't touch the ladder -- neither reporting a new
+        // match nor editing an old one -- so the suspension actually holds.
+        if (await isSuspended(reportedBy, groupId)) {
+            res.status(403).send({ error: "Your account is inactive in this group, so you can't report ladder matches." });
             return;
         }
 
@@ -214,6 +222,16 @@ async function isGroupMember(playerId, groupId) {
     const groups = snap.val();
     if (groups == null) return false;
     return Object.values(groups).includes(groupId);
+}
+
+/**
+ * Whether an admin has suspended this player in the group. The flag lives on the
+ * member ranking: member_rankings/{groupId}/{playerId}/suspended, set by
+ * modifyGroupMember. Absent means not suspended.
+ */
+async function isSuspended(playerId, groupId) {
+    const snap = await admin.database().ref(MEMBER_RANKINGS).child(groupId).child(playerId).child("suspended").get();
+    return snap.val() === true;
 }
 
 /**
