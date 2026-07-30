@@ -183,7 +183,11 @@ async function loadMatches(groupId, seasonId) {
     const snap = await admin.database().ref(LADDER_MATCHES).child(groupId).child(seasonId).get();
     const val = snap.val();
     if (val == null) return [];
-    return Object.values(val).sort(compareMatches);
+    // A contested match is on hold: it stays in the log but its points come off
+    // until it's resolved, so the replay leaves it out.
+    return Object.values(val)
+        .filter((match) => match?.contestation?.isContested !== true)
+        .sort(compareMatches);
 }
 
 function compareMatches(a, b) {

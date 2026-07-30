@@ -3,6 +3,8 @@ const ladder = require("./ladder.js");
 
 module.exports.reportLadderMatch = reportLadderMatch;
 module.exports.deleteLadderMatch = deleteLadderMatch;
+module.exports.disputeLadderMatch = disputeLadderMatch;
+module.exports.withdrawLadderMatch = withdrawLadderMatch;
 module.exports.validateSets = validateSets;
 module.exports.summarizeSets = summarizeSets;
 
@@ -99,9 +101,10 @@ async function reportLadderMatch(req, res) {
                 return;
             }
 
-            const [reporterIsMember, opponentIsMember] = await Promise.all([
+            const [reporterIsMember, opponentIsMember, opponentSuspended] = await Promise.all([
                 isGroupMember(reportedBy, groupId),
                 isGroupMember(opponentId, groupId),
+                isSuspended(opponentId, groupId),
             ]);
             if (!reporterIsMember) {
                 res.status(403).send({ error: "You're not a member of that group." });
@@ -109,6 +112,12 @@ async function reportLadderMatch(req, res) {
             }
             if (!opponentIsMember) {
                 res.status(400).send({ error: "Your opponent isn't a member of that group." });
+                return;
+            }
+            // A suspended player can't appear in a result at all, so a new match
+            // can't be reported against one.
+            if (opponentSuspended) {
+                res.status(400).send({ error: "Your opponent's account is inactive in this group, so you can't report a match against them." });
                 return;
             }
 
@@ -183,6 +192,11 @@ async function deleteLadderMatch(req, res) {
             return;
         }
 
+        if (await isSuspended(userId, groupId)) {
+            res.status(403).send({ error: "Your account is inactive in this group, so you can't change ladder matches." });
+            return;
+        }
+
         const group = (await admin.database().ref(GROUPS).child(groupId).get()).val();
         if (!canManage(existing, userId, group)) {
             res.status(403).send({ error: "Only a player in this match or a group admin can delete it." });
@@ -206,10 +220,148 @@ async function deleteLadderMatch(req, res) {
 }
 
 /**
+ * POST /v1/disputeLadderMatch
+ * body: { matchId, groupId, disputedBy, reason }
+ *
+ * Puts a reported result on hold. The match stays in the log but carries a
+ * `contestation`, and the standings replay skips contested matches (see
+ * ladder.js), so the points come back off until it's resolved -- withdrawn by
+ * the reporter or the score re-reported.
+ */
+async function disputeLadderMatch(req, res) {
+    const body = req.body || {};
+    const { groupId, matchId, disputedBy, reason } = body;
+
+    if (!groupId || !matchId || !disputedBy) {
+        res.status(400).send({ error: "A group, a match, and who's contesting it are all required." });
+        return;
+    }
+
+    try {
+        if (await isSuspended(disputedBy, groupId)) {
+            res.status(403).send({ error: "Your account is inactive in this group, so you can't contest ladder matches." });
+            return;
+        }
+
+        const found = await findMatch(groupId, matchId);
+        if (found == null) {
+            res.status(404).send({ error: "We couldn't find that match." });
+            return;
+        }
+
+        const { ref, seasonId, match } = found;
+        // Only a player in the match may contest it.
+        if (disputedBy !== match.reportedBy && disputedBy !== match.opponentId) {
+            res.status(403).send({ error: "Only a player in this match can contest it." });
+            return;
+        }
+
+        await ref.child("contestation").set({
+            isContested: true,
+            dateContested: Date.now(),
+            contestedBy: disputedBy,
+            reason: typeof reason === "string" && reason.trim() !== "" ? reason : null,
+        });
+
+        const rows = await ladder.buildStandings(groupId, seasonId);
+        res.status(200).send({
+            data: {
+                result: "contested",
+                standings: { seasonId, rows },
+            },
+        });
+    } catch (e) {
+        console.error("disputeLadderMatch error", e);
+        res.status(500).send({ error: "We couldn't contest that match. Please try again." });
+    }
+}
+
+/**
+ * POST /v1/withdrawLadderMatch
+ * body: { matchId, groupId, userId }
+ *
+ * Resolves a contested match by taking it out of the log -- a group admin only,
+ * since it removes another player's result. Only a match that's actually on hold
+ * can be withdrawn; an uncontested one is removed through deleteLadderMatch. The
+ * next standings read replays what's left.
+ */
+async function withdrawLadderMatch(req, res) {
+    const body = req.body || {};
+    const { groupId, matchId, userId } = body;
+
+    if (!groupId || !matchId || !userId) {
+        res.status(400).send({ error: "A group, a match, and who's withdrawing it are all required." });
+        return;
+    }
+
+    try {
+        const group = (await admin.database().ref(GROUPS).child(groupId).get()).val();
+        if (!isAdmin(group, userId)) {
+            res.status(403).send({ error: "Only a group admin can withdraw a contested match." });
+            return;
+        }
+
+        const found = await findMatch(groupId, matchId);
+        if (found == null) {
+            // Already gone -- report the current board rather than an error.
+            res.status(200).send({ data: { result: "already_withdrawn" } });
+            return;
+        }
+
+        const { ref, seasonId, match } = found;
+        if (match.contestation == null || match.contestation.isContested !== true) {
+            res.status(400).send({ error: "Only a contested match can be withdrawn." });
+            return;
+        }
+
+        await ref.remove();
+
+        const rows = await ladder.buildStandings(groupId, seasonId);
+        res.status(200).send({
+            data: {
+                result: "withdrawn",
+                matchId,
+                standings: { seasonId, rows },
+            },
+        });
+    } catch (e) {
+        console.error("withdrawLadderMatch error", e);
+        res.status(500).send({ error: "We couldn't withdraw that match. Please try again." });
+    }
+}
+
+/**
+ * Finds a match by id without knowing its season, by scanning the group's
+ * seasons. Returns { ref, seasonId, match }, or null when there's no such match.
+ * The dispute/withdraw endpoints take only a matchId, so this locates it.
+ */
+async function findMatch(groupId, matchId) {
+    const seasons = (await admin.database().ref(LADDER_MATCHES).child(groupId).get()).val();
+    if (seasons == null) return null;
+    for (const [seasonId, matches] of Object.entries(seasons)) {
+        if (matches != null && Object.prototype.hasOwnProperty.call(matches, matchId)) {
+            return {
+                seasonId,
+                match: matches[matchId],
+                ref: admin.database().ref(LADDER_MATCHES).child(groupId).child(seasonId).child(matchId),
+            };
+        }
+    }
+    return null;
+}
+
+/**
  * Who may edit or delete a match: either player in it, or a group admin.
  */
 function canManage(match, userId, group) {
     if (userId === match.reportedBy || userId === match.opponentId) return true;
+    return isAdmin(group, userId);
+}
+
+/**
+ * Whether userId is a group admin. Admins live at groups-v2/{groupId}/admins.
+ */
+function isAdmin(group, userId) {
     const admins = group?.admins;
     return admins != null && Object.values(admins).includes(userId);
 }
