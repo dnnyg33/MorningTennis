@@ -95,7 +95,11 @@ function createUser(req, res) {
             groups: preExistingGroups,
         };
         console.log("newUser: " + JSON.stringify(newUser))
-        admin.database().ref("approvedNumbers").child(body.firebaseId).set(newUser);
+        await admin.database().ref("approvedNumbers").child(body.firebaseId).set(newUser);
+        //the invitations have been turned into real group memberships, so they are no longer outstanding
+        if (preExistingGroups.length > 0) {
+            await admin.database().ref("invitedUsers").child(body.phoneNumber).remove();
+        }
         res.status(200).send(newUser);
     })
 };
@@ -124,6 +128,31 @@ async function joinGroupRequest(req, res) {
             const request = {
                 "userId": body.userId, "status": "pending", "dateInitiated": new Date().getTime(), "groupId": body.groupId
             }
+            const adminIds = Object.values(group.admins ?? {})
+
+            //the client only sends userId, so look up the phone number the invitations are keyed by
+            const phoneNumber = body.phoneNumber ??
+                (await admin.database().ref("approvedNumbers").child(body.userId).child("phoneNumber").once('value')).val()
+            if (phoneNumber != null) {
+                const invitationsSnapshot = await admin.database().ref("invitedUsers").child(phoneNumber).once('value')
+                const allUserInvitations = Object.entries(invitationsSnapshot.val() ?? {})
+                const invitationsToThisGroup = allUserInvitations.filter(([, invitation]) => invitation.group == body.groupId)
+                if (invitationsToThisGroup.length > 0) {
+                    //already invited, so consume the invitation and join them rather than asking the admins again
+                    for (const [key, invitation] of invitationsToThisGroup) {
+                        await admin.database().ref("invitedUsers").child(phoneNumber).child(key).remove()
+                    }
+                    const invitedName = invitationsToThisGroup[0][1].providedName ?? "A new user"
+                    const registrationTokens = await notifications.getRegistrationTokensFromFirebaseIds(adminIds)
+                    const message = {
+                        "notification": { "title": "Invitation accepted", "body": invitedName + " has accepted the invitation to join " + group.name + "." },
+                        "tokens": registrationTokens
+                    };
+                    await notifications.sendNotificationsToGroup(message, registrationTokens)
+                    addGroupToUser();
+                    return;
+                }
+            }
 
             //find any existing, pending and delete
             await admin.database().ref("joinRequests").child(body.groupId).once('value', async (snapshot) => {
@@ -138,11 +167,14 @@ async function joinGroupRequest(req, res) {
                 admin.database().ref("joinRequests").child(body.groupId).push(request)
                 console.log("notifying admins...")
                 // notify admins
-                let adminIds = Object.values(group.admins)
                 console.log("adminIds: " + JSON.stringify(adminIds))
-                const message = { "notification": { "title": "New join request", "body": "A new user has requested to join " + group.name + ". Tap to view the request." } };
+                const registrationTokens = await notifications.getRegistrationTokensFromFirebaseIds(adminIds)
+                const message = {
+                    "notification": { "title": "New join request", "body": "A new user has requested to join " + group.name + ". Tap to view the request." },
+                    "tokens": registrationTokens
+                };
 
-                await notifications.sendNotificationsToGroup(message, await notifications.getRegistrationTokensFromFirebaseIds(adminIds))
+                await notifications.sendNotificationsToGroup(message, registrationTokens)
             }).then(() => {
                 res.send({ "result": "pending" })
             })
