@@ -20,6 +20,16 @@ module.exports.removePlayerFromGroup = removePlayerFromGroup;
 
 
 /**
+ * Whether a group holds new members as inactive. The flag lives on the group:
+ * groups-v2/{groupId}/suspendOnJoin, set by admins in group settings. Absent
+ * means new members join active.
+ */
+async function groupSuspendsOnJoin(groupId) {
+    const snapshot = await admin.database().ref("groups-v2").child(groupId).child("suspendOnJoin").get();
+    return snapshot.val() === true;
+}
+
+/**
  * When a user signs up to the app, this function is called to create a user object in the database.
  * This function is also called when a user starts the app to update their firebase tokens
  * @param phoneNumber - the user's phone number (optional and can replace the email as the unique identifier)
@@ -99,6 +109,12 @@ function createUser(req, res) {
         //the invitations have been turned into real group memberships, so they are no longer outstanding
         if (preExistingGroups.length > 0) {
             await admin.database().ref("invitedUsers").child(body.phoneNumber).remove();
+            //groups with suspendOnJoin on hold new members as inactive until an admin activates them
+            for (const groupId of preExistingGroups) {
+                if (await groupSuspendsOnJoin(groupId)) {
+                    await admin.database().ref("member_rankings").child(groupId).child(body.firebaseId).update({ "suspended": true });
+                }
+            }
         }
         res.status(200).send(newUser);
     })
@@ -123,7 +139,7 @@ async function joinGroupRequest(req, res) {
         }
         if (group.visibility == "public") {
             //append groupId to user's list of groups
-            addGroupToUser();
+            addGroupToUser(group);
         } else if (group.visibility == "private" || group.visibility == "unlisted") {//unlisted is just for testing.
             const request = {
                 "userId": body.userId, "status": "pending", "dateInitiated": new Date().getTime(), "groupId": body.groupId
@@ -149,7 +165,7 @@ async function joinGroupRequest(req, res) {
                         "tokens": registrationTokens
                     };
                     await notifications.sendNotificationsToGroup(message, registrationTokens)
-                    addGroupToUser();
+                    addGroupToUser(group);
                     return;
                 }
             }
@@ -181,7 +197,7 @@ async function joinGroupRequest(req, res) {
         }
     }).catch((error) => { console.error(error); res.send(500, { "result": "failure", "reason": error }); });
 
-    function addGroupToUser() {
+    function addGroupToUser(group) {
         admin.database().ref("approvedNumbers").child(body.userId).child('groups').once('value', async (snapshotGroups) => {
             var groups = snapshotGroups.val();
             if (groups == null) {
@@ -190,8 +206,9 @@ async function joinGroupRequest(req, res) {
             if (groups.includes(body.groupId)) {
                 res.send({ "result": "failure", "reason": "already in group" });
             } else {
-                //create member_ranking for this user
-                admin.database().ref("member_rankings").child(body.groupId).child(body.userId).set({ "utr": 4, "goodwill": 1 })
+                //create member_ranking for this user. Groups with suspendOnJoin on
+                //hold new members as inactive until an admin activates them.
+                admin.database().ref("member_rankings").child(body.groupId).child(body.userId).set({ "utr": 4, "goodwill": 1, "suspended": group.suspendOnJoin === true })
 
                 groups.push(body.groupId);
                 admin.database().ref("approvedNumbers").child(body.userId).child("groups").set(groups);
@@ -385,7 +402,8 @@ async function approveJoinRequest(req, res) {
             }
 
             console.log("create member_ranking for this user")
-            admin.database().ref("member_rankings").child(body.groupId).child(joinRequest.userId).set({ "utr": 4, "goodwill": 1 })
+            //groups with suspendOnJoin on hold new members as inactive until an admin activates them
+            admin.database().ref("member_rankings").child(body.groupId).child(joinRequest.userId).set({ "utr": 4, "goodwill": 1, "suspended": group.suspendOnJoin === true })
 
             console.log("send notification to user")
             admin.database().ref("approvedNumbers").child(joinRequest.userId).once('value', (snapshot) => {
@@ -778,6 +796,7 @@ async function createGroup(req, res) {
         sortingAlgorithm: body.group.sortingAlgorithm,
         memberCount: 1,
         meetups2: body.group.meetups2,
+        suspendOnJoin: body.group.suspendOnJoin === true,
     }
     const newGroupRef = admin.database().ref("groups-v2").child(body.group.id).set(newGroup);
     //add group to user's list of groups
