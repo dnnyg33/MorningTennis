@@ -21,6 +21,7 @@ const tabs = require("./tabs.js");
 const ladder = require("./ladder.js");
 const ladderMatches = require("./ladder_matches.js");
 const utilities = require("./utilities.js");
+const scheduleTiming = require("./scheduleTiming.js");
 
 // If you define helpers like createNewWeekDbPath here, keep them.
 // Otherwise ensure you import them from wherever they live.
@@ -198,10 +199,26 @@ v1.post("/requestUTRUpdate", async (req, res) => {
 });
 v1.post("/run_openScheduleCommand", async (req, res) => {
     try {
-        run_openScheduleCommand();
+        await run_openScheduleCommand();
         res.status(200).send( { result: "success", message: "open schedule command executed" } );
     } catch (e) {
         console.error("run_openScheduleCommand error", e);
+        res.status(500).json({ error: String(e?.message || e) });
+    }
+});
+// Runs the per-group timing pass on demand. `at` (ISO 8601) pretends it is
+// another moment, for checking a group's configured times without waiting.
+v1.post("/run_signupTimingTick", async (req, res) => {
+    try {
+        const at = req.query["at"] ? new Date(req.query["at"]) : new Date();
+        if (isNaN(at.getTime())) {
+            res.status(400).json({ error: "at must be a valid date" });
+            return;
+        }
+        await run_signupTimingTick(at);
+        res.status(200).send( { result: "success", message: "signup timing tick executed for " + at.toISOString() } );
+    } catch (e) {
+        console.error("run_signupTimingTick error", e);
         res.status(500).json({ error: String(e?.message || e) });
     }
 });
@@ -337,17 +354,6 @@ exports.scheduleReminderNotificationSunday = onSchedule(
     },
 );
 
-exports.scheduleClosingNotification = onSchedule(
-    { schedule: "00 19 * * SUN", timeZone: "America/Denver" },
-    async () => {
-        notifications.run_signupStatusNotification(
-            null,
-            "Schedule closing",
-            "The schedule for this week is about to close. Please submit or make any changes before 8pm.",
-        );
-    },
-);
-
 exports.scheduleProcrastinatorNotification = onSchedule(
     { schedule: "00 11 * * SUN,SAT", timeZone: "America/Denver" },
     async () => {
@@ -355,17 +361,14 @@ exports.scheduleProcrastinatorNotification = onSchedule(
     },
 );
 
-exports.scheduleCloseScheduleCommand = onSchedule(
-    { schedule: "05 20 * * SUN", timeZone: "America/Denver" },
+// Opening, the "closing soon" warning and closing all used to be fixed crons
+// (Fri 8am / Sun 7pm / Sun 8:05pm). They now run off each group's
+// scheduleTimePreferences, so this ticks often enough to honour any time an
+// admin picks and does nothing for groups that aren't due.
+exports.scheduleSignupTick = onSchedule(
+    { schedule: `*/${scheduleTiming.TICK_MINUTES} * * * *`, timeZone: scheduleTiming.DEFAULT_TIMEZONE },
     async () => {
-        await run_closeSignup();
-    },
-);
-
-exports.scheduleOpenNotification = onSchedule(
-    { schedule: "00 8 * * FRI", timeZone: "America/Denver" },
-    async () => {
-        await run_openScheduleCommand();
+        await run_signupTimingTick();
     },
 );
 
@@ -427,27 +430,155 @@ async function runSort(groupId, incomingSubmissionsData, weekName) {
         });
 }
 
-async function run_closeSignup() {
-    await admin.database().ref("groups-v2").once("value", async (snapshot) => {
-        const groupsData = snapshot.val();
-        for (const [groupName, groupData] of Object.entries(groupsData)) {
-            if(groupData.sortingAlgorithm === "whenIsGood") continue; // skip closing for whenIsGood since players can join late and it doesn't affect sorting
-            console.log("closing schedule for " + groupName + ": " + groupData.name);
-            admin.database().ref("groups-v2").child(groupName).child("scheduleIsOpen").set(false);
-            if (groupData.sortingAlgorithm === "balanceSkill") {
-                await cleanupSortedData(groupsData, groupData);
-            }
+/**
+ * Runs every group through its own scheduleTimePreferences and applies whatever
+ * became due since the last tick. One group failing must not stop the rest.
+ */
+async function run_signupTimingTick(now = new Date()) {
+    const snapshot = await admin.database().ref("groups-v2").once("value");
+    const groupsData = snapshot.val() ?? {};
+    for (const [groupId, groupData] of Object.entries(groupsData)) {
+        try {
+            await applyDueSignupEvents(groupId, groupData, groupsData, now);
+        } catch (e) {
+            console.error("signup timing failed for group " + groupId, e);
         }
-        notifications.run_signupStatusNotification(
-            null,
-            "Schedule now closed",
-            "View and RSVP for next week's schedule in the app.",
-        );
-    });
+    }
 }
 
-async function cleanupSortedData(groupsData, groupData) {
-    const path = utilities.createNewWeekDbPath(groupsData.weekStartDay ?? "Monday");
+async function applyDueSignupEvents(groupId, groupData, groupsData, now) {
+    const due = scheduleTiming.dueEvents(groupData, now);
+    const preferences = due.preferences;
+
+    const actions = [];
+    if (due.openAt !== null) {
+        actions.push({
+            at: due.openAt,
+            marker: "lastOpenedAt",
+            run: () => openScheduleForGroup(groupId, groupData, now),
+        });
+    }
+    // Groups that never close (players can join late) would be lied to by a
+    // warning that signups are about to.
+    if (due.closingWarningAt !== null && scheduleTiming.signupsCanClose(groupData)) {
+        actions.push({
+            at: due.closingWarningAt,
+            marker: "lastClosingWarningAt",
+            run: () =>
+                notifications.run_groupSignupStatusNotification(
+                    groupId,
+                    "Schedule closing",
+                    "Signups for " + groupData.name + " close at " + preferences.signupCloseTime +
+                        ". Please submit or make any changes before then.",
+                ),
+        });
+    }
+    if (due.closeAt !== null) {
+        actions.push({
+            at: due.closeAt,
+            marker: "lastClosedAt",
+            run: () => closeSignupForGroup(groupId, groupData, groupsData, now),
+        });
+    }
+    if (actions.length === 0) return;
+
+    // A single tick can cover more than one moment (a long catch-up window, or
+    // a short signup window), so replay them in the order they happened.
+    actions.sort((a, b) => a.at - b.at);
+    for (const action of actions) {
+        await action.run();
+        await admin
+            .database()
+            .ref("groups-v2")
+            .child(groupId)
+            .child("scheduleAutomation")
+            .child(action.marker)
+            .set(action.at);
+    }
+}
+
+async function openScheduleForGroup(groupId, groupData, now = new Date()) {
+    const canClose = scheduleTiming.signupsCanClose(groupData);
+    // Only a group that closes can meaningfully be "already open" ahead of its
+    // reset. A group that never closes is open by construction, so reading the
+    // flag would silence its reset announcement every single week.
+    const openedEarlyByAdmin = canClose && groupData.scheduleIsOpen === true;
+    await admin.database().ref("groups-v2").child(groupId).child("scheduleIsOpen").set(true);
+
+    const preferences = scheduleTiming.preferencesFor(groupData);
+    const path = utilities.createNewWeekDbPath(
+        weekStartDayFor(groupData, preferences),
+        groupReferenceDate(now, preferences),
+    );
+    console.log("Creating empty week for " + groupData.name + " at " + path);
+    await admin.database().ref("incoming-v4").child(groupId).child(path).child("1").set({
+        firebaseId: "weekStart",
+    });
+
+    if (openedEarlyByAdmin) {
+        // An admin opened signups ahead of the scheduled time; don't announce it twice.
+        console.log("schedule for " + groupData.name + " was already open, skipping notification");
+        return;
+    }
+    // A group that never closed was never blocked from signing up, so telling
+    // it signups are "now open" would be meaningless — what changed is the week.
+    await notifications.run_groupSignupStatusNotification(
+        groupId,
+        canClose ? "Schedule now open" : "New week started",
+        canClose
+            ? "You can now sign up for next week's schedule with " + groupData.name + "."
+            : "A new week has started for " + groupData.name +
+                ". Enter the times you can play.",
+    );
+}
+
+async function closeSignupForGroup(groupId, groupData, groupsData, now = new Date()) {
+    if (!scheduleTiming.signupsCanClose(groupData)) {
+        // players can join late and it doesn't affect sorting
+        console.log("skipping close for whenIsGood group " + groupData.name);
+        return;
+    }
+    console.log("closing schedule for " + groupId + ": " + groupData.name);
+    await admin.database().ref("groups-v2").child(groupId).child("scheduleIsOpen").set(false);
+    if (groupData.sortingAlgorithm === "balanceSkill") {
+        await cleanupSortedData(groupsData, groupData, now);
+    }
+    await notifications.run_groupSignupStatusNotification(
+        groupId,
+        "Schedule now closed",
+        "View and RSVP for next week's schedule with " + groupData.name + ".",
+    );
+}
+
+/** The week the app is showing at this moment, in group time — evening opens
+ * and closes land on a different UTC day, and midweek opens on a different
+ * week, so the reference can't be the container's `new Date()`. */
+function groupReferenceDate(now, preferences) {
+    return scheduleTiming.weekReferenceDate(now, preferences);
+}
+
+/** The day a play week is named after. `playStartDay` is where the app reads
+ * this from; `weekStartDay` is the older group-level field, kept as a fallback
+ * so groups that only ever had that keep their existing node names. */
+function weekStartDayFor(groupData, preferences) {
+    return preferences.playStartDay ?? groupData.weekStartDay ?? "Monday";
+}
+
+/** Closes every group now, regardless of its configured time. */
+async function run_closeSignup(now = new Date()) {
+    const snapshot = await admin.database().ref("groups-v2").once("value");
+    const groupsData = snapshot.val() ?? {};
+    for (const [groupId, groupData] of Object.entries(groupsData)) {
+        await closeSignupForGroup(groupId, groupData, groupsData, now);
+    }
+}
+
+async function cleanupSortedData(groupsData, groupData, now = new Date()) {
+    const preferences = scheduleTiming.preferencesFor(groupData);
+    const path = utilities.createNewWeekDbPath(
+        weekStartDayFor(groupData, preferences),
+        groupReferenceDate(now, preferences),
+    );
     await admin
         .database()
         .ref("sorted-v6")
@@ -478,27 +609,11 @@ async function cleanupSortedData(groupsData, groupData) {
         });
 }
 
-function run_openScheduleCommand() {
-    admin.database().ref("groups-v2").once("value", (snapshot) => {
-        const groupsData = snapshot.val();
-        createNewEmptyWeek(groupsData);
-        notifications.run_signupStatusNotification(
-            null,
-            "Schedule now open",
-            "You can now sign up for next week's schedule in the app.",
-        );
-    });
-
-    function createNewEmptyWeek(groupsData) {
-        for (const [groupId, groupData] of Object.entries(groupsData)) {
-            admin.database().ref("groups-v2").child(groupId).child("scheduleIsOpen").set(true);
-            const weekStartDay = groupData.weekStartDay ?? "Monday";
-            const path = utilities.createNewWeekDbPath(weekStartDay);
-            console.log("Creating empty week for " + groupData.name + " at " + path);
-            admin.database().ref("incoming-v4").child(groupId).child(path).child("1").set({
-                firebaseId: "weekStart",
-            });
-        }
+/** Opens every group now, regardless of its configured time. */
+async function run_openScheduleCommand(now = new Date()) {
+    const snapshot = await admin.database().ref("groups-v2").once("value");
+    const groupsData = snapshot.val() ?? {};
+    for (const [groupId, groupData] of Object.entries(groupsData)) {
+        await openScheduleForGroup(groupId, groupData, now);
     }
-
 }

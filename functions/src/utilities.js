@@ -28,9 +28,15 @@ function capitalizeFirstLetter(string) {
 }
 
 // ------------ Exports ------------
-export function createNewWeekDbPath(weekStartDay) {
+/**
+ * @param {String} weekStartDay day the play week starts on
+ * @param {Date} referenceDate day to count from; pass a date whose local fields
+ * are the group's wall clock when "today" must be judged outside the container's
+ * timezone.
+ */
+export function createNewWeekDbPath(weekStartDay, referenceDate = new Date()) {
     const startDayInt = dayOfWeekAsInteger(weekStartDay);
-    const now = new Date();
+    const now = referenceDate;
     const diff = ((startDayInt + 7) - now.getDay()) % 7;
     const startDate = now.addDays(diff);
     const path = weekStartDay + fmt(startDate, "-M-D-YYYY");

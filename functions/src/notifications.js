@@ -2,12 +2,15 @@ module.exports.run_markNotComingNotification = run_markNotComingNotification;
 module.exports.run_scheduledToPlayReminderForAllGroups = run_scheduledToPlayReminderForAllGroups;
 module.exports.run_procastinatorNotification = run_procastinatorNotification;
 module.exports.run_signupStatusNotification = run_signupStatusNotification;
+module.exports.run_groupSignupStatusNotification = run_groupSignupStatusNotification;
+module.exports.getFirebaseIdsInGroup = getFirebaseIdsInGroup;
 module.exports.sendNotificationsToGroup = sendNotificationsToGroup;
 module.exports.getRegistrationTokensFromFirebaseIds = getRegistrationTokensFromFirebaseIds;
 
 const admin = require("firebase-admin");
 const index = require("./index.js")
 const utilities = require("./utilities.js");
+const scheduleTiming = require("./scheduleTiming.js");
 
 async function run_markNotComingNotification(data, res) {
     console.log("run_rsvpNotification:data " + JSON.stringify(data))
@@ -113,6 +116,39 @@ function run_signupStatusNotification(res, title, body) {
         };
         sendNotificationsToGroup(message, registrationTokens)
     });
+}
+
+/**Signup status for a single group. Groups open and close on their own
+ * schedule, so only that group's members hear about it. */
+async function run_groupSignupStatusNotification(groupId, title, body) {
+    const firebaseIds = await getFirebaseIdsInGroup(groupId)
+    if (firebaseIds.length == 0) {
+        console.log("No members in group " + groupId + ", skipping '" + title + "'")
+        return;
+    }
+    const registrationTokens = await getRegistrationTokensFromFirebaseIds(firebaseIds)
+    const message = {
+        "notification": {
+            "title": title,
+            "body": body
+        },
+        "tokens": registrationTokens,
+    };
+    await sendNotificationsToGroup(message, registrationTokens)
+}
+
+async function getFirebaseIdsInGroup(groupId) {
+    const snapshot = await admin.database().ref("approvedNumbers").once('value')
+    const data = snapshot.val() || {}
+    var firebaseIds = []
+    for (const [userKey, userValue] of Object.entries(data)) {
+        //a user's groups have been written as both a list and a map over time
+        const groups = userValue.groups == null ? [] : Object.values(userValue.groups)
+        if (groups.includes(groupId)) {
+            firebaseIds.push(userKey)
+        }
+    }
+    return firebaseIds
 }
 
 
@@ -259,11 +295,12 @@ async function run_procastinatorNotification() {
                         console.log("procrastinators in group " + groupId)
                         console.log(procrastinators)
                         var firebaseIdsOnly = procrastinators.map((user) => user.firebaseId)
+                        const preferences = scheduleTiming.preferencesFor(groupValue)
                         await getRegistrationTokensFromFirebaseIds(firebaseIdsOnly).then(registrationTokens => {
                             const message = {
                                 "notification": {
                                     "title": "Sign up for next week",
-                                    "body": "You have not yet signed up for next week for " + groupValue.name + ". The schedule closes at 8pm Sunday."
+                                    "body": "You have not yet signed up for next week for " + groupValue.name + ". The schedule closes " + preferences.signupCloseDay + " at " + preferences.signupCloseTime + "."
                                 },
                                 "tokens": registrationTokens,
                             };
