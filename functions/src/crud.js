@@ -601,9 +601,11 @@ async function modifyGroupMember(req, res) {
 }
 
 /**
- * Removes a player from a group. Only an admin of the group can remove a player.
+ * Removes a player from a group. Only an admin of the group can remove another
+ * player; anyone can remove themselves (leaving the group), which is the case
+ * where adminId and firebaseId resolve to the same user.
  * @param groupId - the group to remove the player from
- * @param adminId - the admin performing the removal
+ * @param adminId - the user performing the removal (an admin, or the player themselves)
  * @param firebaseId - the firebaseId of the player to remove
  */
 async function removePlayerFromGroup(req, res) {
@@ -623,36 +625,44 @@ async function removePlayerFromGroup(req, res) {
 
         const db = admin.database();
         const adminId = await utilities.sanitizeUserIdToFirebaseId(body.adminId);
+        // Callers may send a public id for the player; fall back to what was sent
+        // when the lookup finds nothing so the paths below stay unchanged.
+        const targetId = (await utilities.sanitizeUserIdToFirebaseId(body.firebaseId)) || body.firebaseId;
 
-        // Verify admin
+        // Verify admin, unless the caller is removing themselves (leaving the group)
         const adminsSnap = await db.ref('groups-v2').child(body.groupId).child('admins').once('value');
         const adminList = adminsSnap.val() || {};
 
+        const isSelfRemoval = adminId != null && adminId === targetId;
         const isAdmin = Object.values(adminList).some(v => v === adminId);
-        if (!isAdmin) {
+        if (!isAdmin && !isSelfRemoval) {
             return res.status(403).json({ message: "adminId is not an admin of this group" });
         }
 
         // Check if removing an admin (not allowed if they're the only admin)
-        const playerIsAdmin = Object.values(adminList).some(v => v === body.firebaseId);
+        const playerIsAdmin = Object.values(adminList).some(v => v === targetId);
         const adminCount = Object.values(adminList).filter(v => !v.endsWith("_deleted")).length;
         if (playerIsAdmin && adminCount <= 1) {
-            return res.status(400).json({ message: "Cannot remove the only admin. Transfer admin rights first." });
+            return res.status(400).json({
+                message: isSelfRemoval
+                    ? "You are the only admin of this group. Make someone else an admin before leaving."
+                    : "Cannot remove the only admin. Transfer admin rights first."
+            });
         }
 
         // Remove group from user's groups array
-        const userGroupsSnap = await db.ref("approvedNumbers").child(body.firebaseId).child("groups").once('value');
+        const userGroupsSnap = await db.ref("approvedNumbers").child(targetId).child("groups").once('value');
         const userGroups = userGroupsSnap.val() || [];
         const newGroups = userGroups.filter(g => g !== body.groupId);
-        await db.ref("approvedNumbers").child(body.firebaseId).child("groups").set(newGroups);
+        await db.ref("approvedNumbers").child(targetId).child("groups").set(newGroups);
 
         // Remove member_rankings entry
-        await db.ref("member_rankings").child(body.groupId).child(body.firebaseId).remove();
+        await db.ref("member_rankings").child(body.groupId).child(targetId).remove();
 
         // If player was admin, mark them as deleted in admin list
         if (playerIsAdmin) {
             for (const [key, value] of Object.entries(adminList)) {
-                if (value === body.firebaseId) {
+                if (value === targetId) {
                     await db.ref("groups-v2").child(body.groupId).child("admins").child(key).set(value + "_deleted");
                 }
             }
