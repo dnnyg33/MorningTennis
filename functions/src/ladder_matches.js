@@ -16,9 +16,18 @@ const MEMBER_RANKINGS = "member_rankings"; // member_rankings/{groupId}/{firebas
 
 const MAX_SETS = 5;
 
+// Ladder play is switched on per group by us, at groups-v2/{groupId}/ladderEnabled.
+// A group can set a season up before then, but nothing may be written to the log
+// until the flag is flipped -- the app says the same on its Ladder tab.
+const LADDER_DISABLED_ERROR =
+    "Ladder play isn't active for this group yet. Contact support@tengentllc.com to have it enabled.";
+
 /**
  * POST /v1/reportLadderMatch
  * body: { id, groupId, seasonId, reportedBy, opponentId, sets, timestamp }
+ *
+ * Rejected outright unless the group's ladder has been switched on -- see
+ * [ladderIsEnabled]. Every other write here is gated the same way.
  *
  * Records a match and applies its points immediately -- no approval step. Because
  * standings are a pure replay of the match log (see ladder.js), "applying" a
@@ -60,6 +69,11 @@ async function reportLadderMatch(req, res) {
         const group = (await admin.database().ref(GROUPS).child(groupId).get()).val();
         if (group == null) {
             res.status(404).send({ error: "We couldn't find that group." });
+            return;
+        }
+
+        if (!ladderIsEnabled(group)) {
+            res.status(403).send({ error: LADDER_DISABLED_ERROR });
             return;
         }
 
@@ -183,6 +197,14 @@ async function deleteLadderMatch(req, res) {
     }
 
     try {
+        // Read before the "already deleted" shortcut: a locked ladder should say
+        // it's locked rather than report a deletion it would never have allowed.
+        const group = await fetchGroup(groupId);
+        if (!ladderIsEnabled(group)) {
+            res.status(403).send({ error: LADDER_DISABLED_ERROR });
+            return;
+        }
+
         const ref = admin.database().ref(LADDER_MATCHES).child(groupId).child(seasonId).child(matchId);
         const existing = (await ref.get()).val();
 
@@ -197,7 +219,6 @@ async function deleteLadderMatch(req, res) {
             return;
         }
 
-        const group = (await admin.database().ref(GROUPS).child(groupId).get()).val();
         if (!canManage(existing, userId, group)) {
             res.status(403).send({ error: "Only a player in this match or a group admin can delete it." });
             return;
@@ -238,6 +259,11 @@ async function disputeLadderMatch(req, res) {
     }
 
     try {
+        if (!ladderIsEnabled(await fetchGroup(groupId))) {
+            res.status(403).send({ error: LADDER_DISABLED_ERROR });
+            return;
+        }
+
         if (await isSuspended(disputedBy, groupId)) {
             res.status(403).send({ error: "Your account is inactive in this group, so you can't contest ladder matches." });
             return;
@@ -295,7 +321,11 @@ async function withdrawLadderMatch(req, res) {
     }
 
     try {
-        const group = (await admin.database().ref(GROUPS).child(groupId).get()).val();
+        const group = await fetchGroup(groupId);
+        if (!ladderIsEnabled(group)) {
+            res.status(403).send({ error: LADDER_DISABLED_ERROR });
+            return;
+        }
         if (!isAdmin(group, userId)) {
             res.status(403).send({ error: "Only a group admin can withdraw a contested match." });
             return;
@@ -356,6 +386,21 @@ async function findMatch(groupId, matchId) {
 function canManage(match, userId, group) {
     if (userId === match.reportedBy || userId === match.opponentId) return true;
     return isAdmin(group, userId);
+}
+
+/**
+ * Whether we've switched ladder play on for this group. Absent means off, so
+ * every group starts with the ladder locked until the flag is set by hand.
+ */
+function ladderIsEnabled(group) {
+    return group?.ladderEnabled === true;
+}
+
+/**
+ * The group record, or null when there's no such group.
+ */
+async function fetchGroup(groupId) {
+    return (await admin.database().ref(GROUPS).child(groupId).get()).val();
 }
 
 /**
