@@ -8,6 +8,7 @@ module.exports.withdrawLadderMatch = withdrawLadderMatch;
 module.exports.validateSets = validateSets;
 module.exports.summarizeSets = summarizeSets;
 module.exports.normalizeBalls = normalizeBalls;
+module.exports.normalizeVideoUrl = normalizeVideoUrl;
 
 // Realtime Database paths.
 const LADDER_MATCHES = "ladder_matches"; // ladder_matches/{groupId}/{seasonId}/{matchId}
@@ -25,7 +26,7 @@ const LADDER_DISABLED_ERROR =
 
 /**
  * POST /v1/reportLadderMatch
- * body: { id, groupId, seasonId, reportedBy, opponentId, sets, timestamp }
+ * body: { id, groupId, seasonId, reportedBy, opponentId, sets, timestamp, balls, videoUrl }
  *
  * Rejected outright unless the group's ladder has been switched on -- see
  * [ladderIsEnabled]. Every other write here is gated the same way.
@@ -69,6 +70,12 @@ async function reportLadderMatch(req, res) {
     const balls = normalizeBalls(body.balls, reportedBy, opponentId);
     if (balls.error != null) {
         res.status(400).send({ error: balls.error });
+        return;
+    }
+
+    const videoUrl = normalizeVideoUrl(body.videoUrl);
+    if (videoUrl.error != null) {
+        res.status(400).send({ error: videoUrl.error });
         return;
     }
 
@@ -158,6 +165,9 @@ async function reportLadderMatch(req, res) {
             // Who brought the balls, worth a few points either way at scoring
             // time. Null on a client that doesn't ask the question yet.
             balls: balls.value,
+            // Optional link to a recording, shown on the result. Worth no
+            // points; null when the reporter didn't offer one.
+            videoUrl: videoUrl.value,
             winnerId,
             loserId,
             reporterSetsWon: summary.reporterSets,
@@ -528,6 +538,51 @@ function normalizeBalls(balls, reportedBy, opponentId) {
         return { error: "Say which of the two players brought balls." };
     }
     return { value: { bothBrought: false, winnerKeptNewCan: null, broughtBy } };
+}
+
+// A link longer than this isn't a share URL, it's someone pasting a document.
+const MAX_VIDEO_URL_LENGTH = 2048;
+
+/**
+ * Checks and normalizes the optional link to a recording of the match, so the
+ * app can put a "watch" button behind it without re-checking what it stored.
+ *
+ * Returns { value } with the link to store -- null when there is none, which is
+ * the usual case and never an error -- or { error } with a message for the
+ * reporter. A link that was typed but can't be opened is worth stopping for: a
+ * dead button is harder to notice later than a missing one, and the reporter is
+ * the only person who still has the real link to hand.
+ *
+ * @param {*} videoUrl   The raw `videoUrl` field off the request body.
+ * @return {{value:string|null}|{error:string}}
+ */
+function normalizeVideoUrl(videoUrl) {
+    if (videoUrl == null) return { value: null };
+    if (typeof videoUrl !== "string") {
+        return { error: "We couldn't read the video link for this match." };
+    }
+
+    const trimmed = videoUrl.trim();
+    if (trimmed === "") return { value: null };
+    if (trimmed.length > MAX_VIDEO_URL_LENGTH) {
+        return { error: "That video link is too long. Use a share link instead." };
+    }
+
+    let parsed;
+    try {
+        // Share sheets hand over a full URL; a link typed by hand usually isn't.
+        parsed = new URL(trimmed.includes("://") ? trimmed : `https://${trimmed}`);
+    } catch {
+        return { error: "That doesn't look like a link. Paste the full video address." };
+    }
+    // Only what a phone can open in a browser, and only a host that could exist.
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        return { error: "That doesn't look like a link. Paste the full video address." };
+    }
+    if (!parsed.hostname.includes(".")) {
+        return { error: "That doesn't look like a link. Paste the full video address." };
+    }
+    return { value: parsed.toString() };
 }
 
 /**
