@@ -7,13 +7,17 @@
  *   2. Base points       -- the 39-point pot split by games (and tiebreak points).
  *   3. Rank distance     -- adjusts the WINNER only, by the rank gap.
  *
+ * On top of those sits the balls adjustment: a flat award for supplying the
+ * balls, or a flat forfeit for keeping a can you didn't earn. See
+ * [ballAdjustment].
+ *
  * This module is the ONLY place points math lives, so the formula can be changed
  * in one file. `ladder.js` (standings) never computes points; it reads stored
  * tallies. Bump FORMULA_VERSION whenever the math changes, and stamp it onto each
  * scored match, so a future rescore can tell which rules produced which award.
  */
 
-const FORMULA_VERSION = 2;
+const FORMULA_VERSION = 3;
 
 /**
  * Tunables, kept as data rather than inline literals.
@@ -32,6 +36,9 @@ const CONFIG = {
     // The winner's final award is always within these bounds.
     minWinnerAward: 12,
     maxWinnerAward: 55,
+    // Bringing the balls when your opponent didn't, or keeping a new can you
+    // didn't earn. Awarded and forfeited at the same rate.
+    ballPoints: 3,
 };
 
 function clamp(value, min, max) {
@@ -78,6 +85,45 @@ function rankDistanceAdjustment(winnerRank, loserRank) {
 }
 
 /**
+ * Who supplied the balls, worth a flat CONFIG.ballPoints either way.
+ *
+ * The reporter answers two questions on the form: whether both players brought
+ * balls, and then either who did bring them or where the unopened can ended up.
+ *
+ *   - both brought, winner kept the new can -- square; nobody is owed anything
+ *   - both brought, loser kept it           -- the loser forfeits ballPoints
+ *   - one brought them                      -- that player earns ballPoints,
+ *                                              whether they won or lost
+ *
+ * Missing or incomplete answers (a client older than the question, or a match
+ * reported before it existed) score nothing rather than guessing.
+ *
+ * @param {object} args
+ * @param {{bothBrought?:boolean, winnerKeptNewCan?:boolean, broughtBy?:string}|null} args.balls
+ * @param {string} args.winnerId
+ * @param {string} args.loserId
+ * @return {{winner:number, loser:number}} Signed points to add to each side.
+ */
+function ballAdjustment({ balls, winnerId, loserId }) {
+    const none = { winner: 0, loser: 0 };
+    if (balls == null) return none;
+
+    if (balls.bothBrought === true) {
+        // The new can goes home with the winner. A loser who takes it pays for it.
+        return balls.winnerKeptNewCan === false
+            ? { winner: 0, loser: -CONFIG.ballPoints }
+            : none;
+    }
+
+    if (balls.bothBrought === false) {
+        if (balls.broughtBy === winnerId) return { winner: CONFIG.ballPoints, loser: 0 };
+        if (balls.broughtBy === loserId) return { winner: 0, loser: CONFIG.ballPoints };
+    }
+
+    return none;
+}
+
+/**
  * Points for both sides of a confirmed match.
  *
  * @param {object} match
@@ -85,28 +131,38 @@ function rankDistanceAdjustment(winnerRank, loserRank) {
  * @param {number} match.loserRank   Loser's rank before the match (1-based, lower is better).
  * @param {Array<{winnerGames:number, loserGames:number, isTiebreak?:boolean}>} match.sets
  *        Sets from the WINNER's perspective.
+ * @param {object} [match.balls]     The reporter's ball answers -- see [ballAdjustment].
+ * @param {string} [match.winnerId]  Needed only to read `balls.broughtBy`.
+ * @param {string} [match.loserId]   Needed only to read `balls.broughtBy`.
  * @return {{
  *   winnerPoints:number, loserPoints:number,
  *   winnerBase:number, loserBase:number, distanceAdjustment:number,
+ *   ballAdjustment:{winner:number, loser:number},
  *   formulaVersion:number
  * }}
  */
-function scoreMatch({ winnerRank, loserRank, sets }) {
+function scoreMatch({ winnerRank, loserRank, sets, balls = null, winnerId, loserId }) {
     const loserBase = loserBasePoints(sets);
     const winnerBase = CONFIG.pot - loserBase;
     const distanceAdjustment = rankDistanceAdjustment(winnerRank, loserRank);
+    const ballPoints = ballAdjustment({ balls, winnerId, loserId });
 
     return {
+        // The balls award sits OUTSIDE the clamp on purpose: the bounds exist to
+        // keep the rank-distance swing sane, and swallowing a bonus somebody
+        // earned by turning up with balls would make the answer meaningless.
         winnerPoints: clamp(
             winnerBase + distanceAdjustment,
             CONFIG.minWinnerAward,
             CONFIG.maxWinnerAward,
-        ),
-        // The loser always keeps their base points -- no distance, no clamp.
-        loserPoints: loserBase,
+        ) + ballPoints.winner,
+        // The loser always keeps their base points -- no distance, no clamp. The
+        // balls forfeit can take this below zero, which is the point of it.
+        loserPoints: loserBase + ballPoints.loser,
         winnerBase,
         loserBase,
         distanceAdjustment,
+        ballAdjustment: ballPoints,
         formulaVersion: FORMULA_VERSION,
     };
 }
@@ -140,5 +196,6 @@ module.exports = {
     scoreMatch,
     loserBasePoints,
     rankDistanceAdjustment,
+    ballAdjustment,
     currentBorrowedPoints,
 };

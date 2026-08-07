@@ -7,6 +7,7 @@ module.exports.disputeLadderMatch = disputeLadderMatch;
 module.exports.withdrawLadderMatch = withdrawLadderMatch;
 module.exports.validateSets = validateSets;
 module.exports.summarizeSets = summarizeSets;
+module.exports.normalizeBalls = normalizeBalls;
 
 // Realtime Database paths.
 const LADDER_MATCHES = "ladder_matches"; // ladder_matches/{groupId}/{seasonId}/{matchId}
@@ -62,6 +63,12 @@ async function reportLadderMatch(req, res) {
     const summary = summarizeSets(sets);
     if (summary.winnerIsReporter == null) {
         res.status(400).send({ error: "This match doesn't have a winner. Report the score once the match is finished." });
+        return;
+    }
+
+    const balls = normalizeBalls(body.balls, reportedBy, opponentId);
+    if (balls.error != null) {
+        res.status(400).send({ error: balls.error });
         return;
     }
 
@@ -148,6 +155,9 @@ async function reportLadderMatch(req, res) {
             reportedBy,
             opponentId,
             sets: summary.sets,
+            // Who brought the balls, worth a few points either way at scoring
+            // time. Null on a client that doesn't ask the question yet.
+            balls: balls.value,
             winnerId,
             loserId,
             reporterSetsWon: summary.reporterSets,
@@ -478,6 +488,46 @@ function validateSets(sets) {
     }
 
     return null;
+}
+
+/**
+ * Checks and normalizes the ball answers the app sends alongside a score, so
+ * only a complete, self-consistent answer ever reaches the scorer.
+ *
+ * Returns { value } with the record to store, or { error } with a message for
+ * the reporter. `value` is null when there is nothing to store: a client older
+ * than the question doesn't send the field at all, and a match without answers
+ * simply gets no adjustment (see ladder_scoring.ballAdjustment).
+ *
+ * @param {*} balls              The raw `balls` field off the request body.
+ * @param {string} reportedBy    Reporter's id -- one of the two answers to "who brought balls?".
+ * @param {string} opponentId    Opponent's id -- the other.
+ * @return {{value:object|null}|{error:string}}
+ */
+function normalizeBalls(balls, reportedBy, opponentId) {
+    if (balls == null) return { value: null };
+    if (typeof balls !== "object") {
+        return { error: "We couldn't read the ball answers for this match." };
+    }
+
+    const { bothBrought, winnerKeptNewCan, broughtBy } = balls;
+    // Unanswered, not half-answered: nothing to score, and nothing to complain about.
+    if (bothBrought == null) return { value: null };
+    if (typeof bothBrought !== "boolean") {
+        return { error: "Say whether both players brought balls." };
+    }
+
+    if (bothBrought) {
+        if (typeof winnerKeptNewCan !== "boolean") {
+            return { error: "Say whether the winner kept the new can of balls." };
+        }
+        return { value: { bothBrought: true, winnerKeptNewCan, broughtBy: null } };
+    }
+
+    if (broughtBy !== reportedBy && broughtBy !== opponentId) {
+        return { error: "Say which of the two players brought balls." };
+    }
+    return { value: { bothBrought: false, winnerKeptNewCan: null, broughtBy } };
 }
 
 /**

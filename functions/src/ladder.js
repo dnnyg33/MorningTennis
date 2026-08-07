@@ -255,7 +255,16 @@ function applyMatch(tallies, match, ranksBefore) {
     const winnerGames = sets.reduce((n, s) => n + s.winnerGames, 0);
     const loserGames = sets.reduce((n, s) => n + s.loserGames, 0);
 
-    const scored = scoring.scoreMatch({ winnerRank, loserRank, sets });
+    const scored = scoring.scoreMatch({
+        winnerRank,
+        loserRank,
+        sets,
+        // Stored answers name a player by id, so the scorer needs both ids to
+        // tell whose side the balls bonus falls on.
+        balls: match.balls ?? null,
+        winnerId,
+        loserId,
+    });
 
     const w = (tallies[winnerId] ??= emptyTally());
     w.points += scored.winnerPoints;
