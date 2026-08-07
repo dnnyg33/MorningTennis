@@ -4,6 +4,8 @@ const utilities = require("./utilities.js");
 
 module.exports.ladderStandings = ladderStandings;
 module.exports.buildStandings = buildStandings;
+module.exports.ladderMatchPoints = ladderMatchPoints;
+module.exports.matchAward = matchAward;
 module.exports.replayMatches = replayMatches;
 module.exports.resolveSeason = resolveSeason;
 
@@ -98,6 +100,54 @@ async function ladderStandings(req, res) {
         console.error("ladderStandings error", e);
         res.status(500).send({ error: "We couldn't load the ladder standings. Please try again." });
     }
+}
+
+/**
+ * POST /v1/ladderMatchPoints
+ * body: { groupId, seasonId, matchId }
+ *
+ * Read-only. What one match paid each player, for the match detail screen.
+ *
+ * The answer comes from a full replay for the same reason standings do: a
+ * match's rank-distance points depend on where the two players sat when they
+ * played it, so an edit to an earlier match changes it. Nothing is stored, and
+ * this never disagrees with the standings it was replayed alongside.
+ *
+ * `award` is null when the match earned nothing to report -- it is contested and
+ * on hold, or it isn't in this season's log at all. The app says which.
+ */
+async function ladderMatchPoints(req, res) {
+    const body = req.body || {};
+    const { groupId, seasonId, matchId } = body;
+
+    if (!groupId || !seasonId || !matchId) {
+        res.status(400).send({ error: "A group, a ladder season, and a match are required to load points." });
+        return;
+    }
+
+    try {
+        const award = await matchAward(groupId, seasonId, matchId);
+        res.status(200).send({
+            data: {
+                result: "success",
+                award,
+            },
+        });
+    } catch (e) {
+        console.error("ladderMatchPoints error", e);
+        res.status(500).send({ error: "We couldn't load the points for this match. Please try again." });
+    }
+}
+
+/**
+ * What one match paid each player, or null when the replay didn't score it.
+ *
+ * @return {Promise<object|null>}
+ */
+async function matchAward(groupId, seasonId, matchId) {
+    const matches = await loadMatches(groupId, seasonId);
+    if (matches.length === 0) return null;
+    return replayMatches(matches).awards[matchId] ?? null;
 }
 
 /**
@@ -208,10 +258,16 @@ function compareMatches(a, b) {
  * earlier one. Also captures the ranking just before the final match, which is
  * what `movement` is measured against.
  *
- * @return {{ tallies: object, previousRanks: object }}
+ * `awards` is what each match paid the two players, keyed by match id. It is a
+ * by-product of the replay rather than anything stored: the same match is worth
+ * a different number of points once an earlier one is edited, so the only honest
+ * answer to "what did this match pay?" comes from replaying the log.
+ *
+ * @return {{ tallies: object, previousRanks: object, awards: object }}
  */
 function replayMatches(matches) {
     const tallies = {}; // playerId -> { points, wins, losses, gamesWon, gamesLost }
+    const awards = {}; // matchId -> { winnerId, loserId, winnerPoints, loserPoints, ... }
     let previousRanks = {};
 
     matches.forEach((match, index) => {
@@ -219,10 +275,13 @@ function replayMatches(matches) {
         if (index === matches.length - 1) {
             previousRanks = ranksBefore;
         }
-        applyMatch(tallies, match, ranksBefore);
+        const award = applyMatch(tallies, match, ranksBefore);
+        if (award != null && match.id != null) {
+            awards[match.id] = award;
+        }
     });
 
-    return { tallies, previousRanks };
+    return { tallies, previousRanks, awards };
 }
 
 function emptyTally() {
@@ -235,10 +294,13 @@ function emptyTally() {
  * A player with no tally yet is unranked; we place them just below everyone
  * ranked (playerCount + 1), so the first match of a season -- both players
  * unranked -- is pure base points (zero rank gap, zero distance).
+ *
+ * @return {object|null} What this match paid each side, or null if it was
+ *         skipped. See [replayMatches].
  */
 function applyMatch(tallies, match, ranksBefore) {
     const { winnerId, loserId } = match;
-    if (winnerId == null || loserId == null) return; // skip malformed records
+    if (winnerId == null || loserId == null) return null; // skip malformed records
 
     const unrankedRank = Object.keys(tallies).length + 1;
     const winnerRank = ranksBefore[winnerId] ?? unrankedRank;
@@ -277,6 +339,20 @@ function applyMatch(tallies, match, ranksBefore) {
     l.losses += 1;
     l.gamesWon += loserGames;
     l.gamesLost += winnerGames;
+
+    return {
+        winnerId,
+        loserId,
+        winnerPoints: Math.round(scored.winnerPoints),
+        loserPoints: Math.round(scored.loserPoints),
+        // The parts the totals are made of, so the app can explain an award
+        // rather than just assert it.
+        winnerBase: scored.winnerBase,
+        loserBase: scored.loserBase,
+        distanceAdjustment: scored.distanceAdjustment,
+        ballAdjustment: scored.ballAdjustment,
+        formulaVersion: scored.formulaVersion,
+    };
 }
 
 /**

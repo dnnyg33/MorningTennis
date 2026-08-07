@@ -167,6 +167,7 @@ v1.post("/tabReport", async (req, res) => {
 
 // Ladder routes
 v1.post("/ladderStandings", (req, res) => ladder.ladderStandings(req, res));
+v1.post("/ladderMatchPoints", (req, res) => ladder.ladderMatchPoints(req, res));
 v1.post("/reportLadderMatch", (req, res) => ladderMatches.reportLadderMatch(req, res));
 v1.post("/deleteLadderMatch", (req, res) => ladderMatches.deleteLadderMatch(req, res));
 v1.post("/disputeLadderMatch", (req, res) => ladderMatches.disputeLadderMatch(req, res));
