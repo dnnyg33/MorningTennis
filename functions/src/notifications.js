@@ -6,11 +6,95 @@ module.exports.run_groupSignupStatusNotification = run_groupSignupStatusNotifica
 module.exports.getFirebaseIdsInGroup = getFirebaseIdsInGroup;
 module.exports.sendNotificationsToGroup = sendNotificationsToGroup;
 module.exports.getRegistrationTokensFromFirebaseIds = getRegistrationTokensFromFirebaseIds;
+module.exports.filterByNotificationPreference = filterByNotificationPreference;
+module.exports.groupIdFromWeekPath = groupIdFromWeekPath;
+module.exports.run_matchingSlotsNotification = run_matchingSlotsNotification;
 
 const admin = require("firebase-admin");
 const index = require("./index.js")
 const utilities = require("./utilities.js");
 const scheduleTiming = require("./scheduleTiming.js");
+
+/**The categories a member can switch off for one group, from the app's
+ * notification settings page. Stored at
+ * member_rankings/{groupId}/{firebaseId}/notifications. */
+const NOTIFICATION_CATEGORIES = {
+    scheduleActivity: "scheduleActivity",
+    //when-is-good groups only: someone signed up over a slot of yours
+    matchingSlots: "matchingSlots",
+    //every algorithm but when-is-good: the sort has put you down to play
+    playReminders: "playReminders",
+};
+//exported here rather than with the functions at the top: a const is not
+//hoisted, so reading it up there throws before this line runs
+module.exports.NOTIFICATION_CATEGORIES = NOTIFICATION_CATEGORIES;
+
+/**Whether a group running algorithm sends category at all.
+ *
+ * Matching slots and play reminders are two answers to the same question —
+ * "the schedule moved, does it concern you?" — and which one a group can
+ * answer follows from how it sorts. The app only offers the applicable one,
+ * so the other is off here: a member has no switch to turn it back on, and a
+ * notification nobody can decline is not a preference. */
+function groupSendsCategory(algorithm, category) {
+    if (category === NOTIFICATION_CATEGORIES.matchingSlots) return algorithm === "whenIsGood";
+    if (category === NOTIFICATION_CATEGORIES.playReminders) return algorithm !== "whenIsGood";
+    return true;
+}
+module.exports.groupSendsCategory = groupSendsCategory;
+
+/**How groupId sorts, or null if the group is gone. Read straight from the
+ * group node so it cannot drift from what the app shows the member. */
+async function sortingAlgorithmOf(groupId) {
+    return (await admin.database().ref("groups-v2").child(groupId).child("sortingAlgorithm").once('value')).val()
+}
+
+/**Drops the members of groupId who are not down for category.
+ *
+ * A category the group's algorithm does not send goes to nobody, whatever is
+ * stored — the app hides that switch, so a stored true there only means the
+ * member once used a build that showed it, or saved the neighbouring switch
+ * and wrote the whole node.
+ *
+ * On a category the group does send, only an explicit false counts as off: a
+ * member with no stored node, or a node that predates this category, hears
+ * everything — which is what they got before the setting existed. A read
+ * failure leaves the list alone for the same reason; a database hiccup must
+ * never silence a whole group. */
+async function filterByNotificationPreference(groupId, firebaseIds, category) {
+    if (firebaseIds == null || firebaseIds.length == 0) return [];
+    if (groupId == null || groupId === "") return firebaseIds;
+    try {
+        const algorithm = await sortingAlgorithmOf(groupId)
+        if (!groupSendsCategory(algorithm, category)) {
+            console.log("Group " + groupId + " sorts by " + algorithm + ", so '" + category + "' is off for everyone in it")
+            return [];
+        }
+        const snapshot = await admin.database().ref("member_rankings").child(groupId).once('value')
+        const rankings = snapshot.val() || {}
+        const wanted = firebaseIds.filter((firebaseId) => {
+            const preferences = (rankings[firebaseId] || {}).notifications
+            return preferences == null || preferences[category] !== false
+        })
+        const optedOut = firebaseIds.length - wanted.length
+        if (optedOut > 0) {
+            console.log(optedOut + " of " + firebaseIds.length + " members in " + groupId + " have '" + category + "' off")
+        }
+        return wanted
+    } catch (e) {
+        console.error("Could not read notification preferences for " + groupId + ", sending to everyone: " + e)
+        return firebaseIds
+    }
+}
+
+/**A weekPath is "sorted-v6/{groupId}/{algorithm}/{week}", so the group is the
+ * second segment. Returns null for anything shaped differently, which leaves
+ * the send unfiltered rather than dropping it. */
+function groupIdFromWeekPath(weekPath) {
+    if (weekPath == null) return null;
+    const segments = String(weekPath).split("/").filter((segment) => segment !== "")
+    return segments.length > 1 ? segments[1] : null;
+}
 
 async function run_markNotComingNotification(data, res) {
     console.log("run_rsvpNotification:data " + JSON.stringify(data))
@@ -30,6 +114,8 @@ async function run_markNotComingNotification(data, res) {
     const position = parseInt(data.position)
     const weekPath = data.weekPath
     const dayName = data.dayName
+    //both notifications below are about a day you are down to play on
+    const groupId = groupIdFromWeekPath(weekPath)
     const today = new Date()
     const offsetHours = data.offsetHours ? data.offsetHours : -6
     const dayNumber = utilities.dayOfWeekAsInteger(dayName)
@@ -49,7 +135,8 @@ async function run_markNotComingNotification(data, res) {
                 firebaseIds.push(userValue.firebaseId)
             }
             console.log(firebaseIds)
-            await getRegistrationTokensFromFirebaseIds(firebaseIds).then(registrationTokens => {
+            const recipients = await filterByNotificationPreference(groupId, firebaseIds, NOTIFICATION_CATEGORIES.playReminders)
+            await getRegistrationTokensFromFirebaseIds(recipients).then(registrationTokens => {
                 const message = {
                     "notification": {
                         "title": "Last minute change!",
@@ -88,7 +175,8 @@ async function run_markNotComingNotification(data, res) {
                 }
 
             }
-            await getRegistrationTokensFromFirebaseIds(firebaseIds).then(registrationTokens => {
+            const recipients = await filterByNotificationPreference(groupId, firebaseIds, NOTIFICATION_CATEGORIES.playReminders)
+            await getRegistrationTokensFromFirebaseIds(recipients).then(registrationTokens => {
                 const message = {
                     "notification": {
                         "title": "You've been promoted to play (" + dayName + ")!",
@@ -121,9 +209,10 @@ function run_signupStatusNotification(res, title, body) {
 /**Signup status for a single group. Groups open and close on their own
  * schedule, so only that group's members hear about it. */
 async function run_groupSignupStatusNotification(groupId, title, body) {
-    const firebaseIds = await getFirebaseIdsInGroup(groupId)
+    const members = await getFirebaseIdsInGroup(groupId)
+    const firebaseIds = await filterByNotificationPreference(groupId, members, NOTIFICATION_CATEGORIES.scheduleActivity)
     if (firebaseIds.length == 0) {
-        console.log("No members in group " + groupId + ", skipping '" + title + "'")
+        console.log("Nobody in group " + groupId + " to tell, skipping '" + title + "'")
         return;
     }
     const registrationTokens = await getRegistrationTokensFromFirebaseIds(firebaseIds)
@@ -135,6 +224,141 @@ async function run_groupSignupStatusNotification(groupId, title, body) {
         "tokens": registrationTokens,
     };
     await sendNotificationsToGroup(message, registrationTokens)
+}
+
+/**"New potential matchup" — someone signed up over a slot of yours.
+ *
+ * Only when-is-good groups have slots to collide, so this is a no-op anywhere
+ * else. Called with the incoming-v4 week node from either side of a write:
+ * anything keyed in after but not in before is a submission that just landed.
+ *
+ * A member who resubmits only announces the slots they did not already have,
+ * so tweaking your availability doesn't re-ping everyone you already matched. */
+async function run_matchingSlotsNotification(groupId, before, after) {
+    if (after == null) return;
+    const algorithm = await sortingAlgorithmOf(groupId)
+    if (!groupSendsCategory(algorithm, NOTIFICATION_CATEGORIES.matchingSlots)) {
+        console.log("Group " + groupId + " sorts by " + algorithm + ", no slots to match")
+        return;
+    }
+    const beforeWeek = before || {}
+    const newKeys = Object.keys(after).filter((key) => beforeWeek[key] == null)
+    if (newKeys.length == 0) {
+        console.log("No new submissions in " + groupId + ", nothing to match")
+        return;
+    }
+    for (const key of newKeys) {
+        await announceSubmission(after[key], key)
+    }
+
+    async function announceSubmission(submission, key) {
+        if (submission == null || submission.firebaseId == null) return;
+        const announced = newSlotsIn(submission, latestSubmissionFor(beforeWeek, submission.firebaseId))
+        if (announced.length == 0) {
+            console.log(submission.firebaseId + " resubmitted with nothing new")
+            return;
+        }
+        //everyone else's newest submission, including ones made earlier in the week
+        const others = latestSubmissionsByMember(after, submission.firebaseId)
+        const matched = others
+            .filter((other) => slotsOverlap(announced, slotsOf(other)))
+            .map((other) => other.firebaseId)
+        if (matched.length == 0) {
+            console.log("No overlapping slots for " + submission.firebaseId + " in " + groupId)
+            return;
+        }
+        const recipients = await filterByNotificationPreference(groupId, matched, NOTIFICATION_CATEGORIES.matchingSlots)
+        const registrationTokens = await getRegistrationTokensFromFirebaseIds(recipients)
+        const message = {
+            "notification": {
+                "title": "New potential matchup",
+                "body": "See the schedule to see who signed up during one of your slots."
+            },
+            "tokens": registrationTokens,
+        };
+        await sendNotificationsToGroup(message, registrationTokens)
+    }
+}
+
+function slotsOf(submission) {
+    const slots = submission == null ? null : submission.availableSlots
+    if (slots == null) return [];
+    //written as a list, but firebase hands back a map when keys are sparse
+    return Object.values(slots).filter((slot) => slot != null)
+}
+
+/**Start and end are stored as "h.mm" strings, so they are read as clock times
+ * rather than numbers — "8.45" is 8:45, not a fraction of an hour. */
+function minutesOf(time) {
+    if (time == null) return null;
+    const [hours, minutes] = String(time).split(".")
+    const hour = parseInt(hours, 10)
+    if (isNaN(hour)) return null;
+    return hour * 60 + (parseInt(minutes, 10) || 0)
+}
+
+/**Two slots touch when they share a day and their times cross at all. */
+function overlaps(a, b) {
+    if (a.dayOfWeek !== b.dayOfWeek) return false;
+    const aStart = minutesOf(a.startTime)
+    const aEnd = minutesOf(a.endTime)
+    const bStart = minutesOf(b.startTime)
+    const bEnd = minutesOf(b.endTime)
+    if (aStart == null || aEnd == null || bStart == null || bEnd == null) return false;
+    return aStart < bEnd && bStart < aEnd
+}
+
+function slotsOverlap(slotsA, slotsB) {
+    return slotsA.some((a) => slotsB.some((b) => overlaps(a, b)))
+}
+
+/**The slots in submission that the member had not already posted. */
+function newSlotsIn(submission, previous) {
+    const already = slotsOf(previous)
+    return slotsOf(submission).filter(
+        (slot) => !already.some((old) =>
+            old.dayOfWeek === slot.dayOfWeek &&
+            String(old.startTime) === String(slot.startTime) &&
+            String(old.endTime) === String(slot.endTime)),
+    )
+}
+
+/**Submission keys are the epoch millis of the submission, so the larger key is
+ * the newer entry. */
+function isNewerKey(key, than) {
+    const a = parseInt(key, 10)
+    const b = parseInt(than, 10)
+    if (!isNaN(a) && !isNaN(b)) return a > b;
+    return String(key) > String(than)
+}
+
+/**A member's newest entry in a week node. Submitting appends rather than
+ * replaces, so a member who submits twice leaves two entries behind. */
+function latestSubmissionFor(week, firebaseId) {
+    let latest = null;
+    let latestKey = null;
+    for (const [key, submission] of Object.entries(week || {})) {
+        if (submission == null || submission.firebaseId !== firebaseId) continue;
+        if (latestKey == null || isNewerKey(key, latestKey)) {
+            latest = submission
+            latestKey = key
+        }
+    }
+    return latest;
+}
+
+/**Everyone but exceptId, each as their newest submission. */
+function latestSubmissionsByMember(week, exceptId) {
+    const byMember = {}
+    for (const [key, submission] of Object.entries(week || {})) {
+        if (submission == null || submission.firebaseId == null) continue;
+        if (submission.firebaseId === exceptId) continue;
+        const held = byMember[submission.firebaseId]
+        if (held == null || isNewerKey(key, held.key)) {
+            byMember[submission.firebaseId] = { key: key, submission: submission }
+        }
+    }
+    return Object.values(byMember).map((entry) => entry.submission)
 }
 
 async function getFirebaseIdsInGroup(groupId) {
@@ -248,7 +472,8 @@ async function run_scheduledToPlayReminderForAllGroups() {
                 console.log("No blank RSVPs for group " + key);
             } else {
                 console.log(firebaseIds.length + " blank RSVPs");
-                await getRegistrationTokensFromFirebaseIds(firebaseIds).then(async (registrationTokens) => {
+                const recipients = await filterByNotificationPreference(key, firebaseIds, NOTIFICATION_CATEGORIES.playReminders);
+                await getRegistrationTokensFromFirebaseIds(recipients).then(async (registrationTokens) => {
                     const message = {
                         "notification": {
                             "title": "Player reminder",
@@ -296,7 +521,9 @@ async function run_procastinatorNotification() {
                         console.log(procrastinators)
                         var firebaseIdsOnly = procrastinators.map((user) => user.firebaseId)
                         const preferences = scheduleTiming.preferencesFor(groupValue)
-                        await getRegistrationTokensFromFirebaseIds(firebaseIdsOnly).then(registrationTokens => {
+                        //this is the schedule nagging you about itself, so it follows the schedule opt-out
+                        const recipients = await filterByNotificationPreference(groupId, firebaseIdsOnly, NOTIFICATION_CATEGORIES.scheduleActivity)
+                        await getRegistrationTokensFromFirebaseIds(recipients).then(registrationTokens => {
                             const message = {
                                 "notification": {
                                     "title": "Sign up for next week",

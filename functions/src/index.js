@@ -287,6 +287,11 @@ exports.sortWeekv6 = onValueWritten(
         const weekName = event.params.day;
         const incomingSubmissionsData = event.data.after.val();
         await runSort(groupId, incomingSubmissionsData, weekName);
+        await notifications.run_matchingSlotsNotification(
+            groupId,
+            event.data.before.val(),
+            incomingSubmissionsData,
+        );
     },
 );
 
