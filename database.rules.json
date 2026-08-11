@@ -98,6 +98,21 @@
                 ".write": true
             }
         },
+        "rsvps-v1":
+        {
+            ".read": true,
+            ".write": false,
+            "$groupId":
+            {
+                "$date":
+                {
+                    "$firebaseId":
+                    {
+                        ".write": true
+                    }
+                }
+            }
+        },
         "incoming":
         {
             ".read": true,
