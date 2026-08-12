@@ -17,6 +17,9 @@ module.exports.deleteGroup = deleteGroup;
 module.exports.createGroup = createGroup;
 module.exports.logout = logout;
 module.exports.removePlayerFromGroup = removePlayerFromGroup;
+//exported for testing: the group limit is the paywall, so it's worth asserting on
+module.exports.hasActiveProSubscription = hasActiveProSubscription;
+module.exports.proSubscriptionRequiredToJoin = proSubscriptionRequiredToJoin;
 
 
 /**
@@ -27,6 +30,65 @@ module.exports.removePlayerFromGroup = removePlayerFromGroup;
 async function groupSuspendsOnJoin(groupId) {
     const snapshot = await admin.database().ref("groups-v2").child(groupId).child("suspendOnJoin").get();
     return snapshot.val() === true;
+}
+
+/**
+ * How many groups an account without Pro can belong to. Being in a second group
+ * is one of the things Pro is sold on, so the count is checked here rather than
+ * only in the app — a client that skips the question would otherwise be taken
+ * at its word.
+ */
+const FREE_GROUP_LIMIT = 1;
+
+/** What every path answers with when the limit is what stopped the join. */
+const SUBSCRIPTION_REQUIRED = "A Pro subscription is required to be in more than one group.";
+
+/**
+ * The groups a user belongs to. The list is written as an array, but Firebase
+ * hands a sparse one back as an object, so both shapes are flattened here.
+ */
+async function groupIdsForUser(userId) {
+    const snapshot = await admin.database().ref("approvedNumbers").child(userId).child("groups").get();
+    return Object.values(snapshot.val() ?? {}).filter((groupId) => groupId != null);
+}
+
+/**
+ * Whether the user is holding a Pro subscription that hasn't run out.
+ *
+ * subscriptions/ collects one pushed record per purchase and per renewal the
+ * app has noticed, so a long-standing subscriber has several — any one of them
+ * reaching into the future is enough.
+ *
+ * The records are written by the app, so this stops a client that simply
+ * doesn't ask rather than a forged record; moving the question to RevenueCat's
+ * API would close that, and this is the one place that would have to change.
+ */
+async function hasActiveProSubscription(userId) {
+    const snapshot = await admin.database().ref("subscriptions").get();
+    return Object.values(snapshot.val() ?? {}).some((subscription) => {
+        if (subscription == null || subscription.userId != userId) {
+            return false;
+        }
+        const expires = new Date(subscription.dateExpires).getTime();
+        //a date that won't parse is treated as no subscription, not as a free pass
+        return !isNaN(expires) && expires > Date.now();
+    });
+}
+
+/**
+ * Whether joining groupId would put userId past [FREE_GROUP_LIMIT] with no
+ * subscription to cover it.
+ *
+ * Someone who is already in the group is never stopped — their caller has its
+ * own "already in group" answer — and neither is anyone who is already over the
+ * limit from before it existed, so long as they aren't adding to the pile.
+ */
+async function proSubscriptionRequiredToJoin(userId, groupId) {
+    const groupIds = await groupIdsForUser(userId);
+    if (groupIds.includes(groupId) || groupIds.length < FREE_GROUP_LIMIT) {
+        return false;
+    }
+    return !(await hasActiveProSubscription(userId));
 }
 
 /**
@@ -135,6 +197,12 @@ async function joinGroupRequest(req, res) {
         const group = snapshot.val();
         if (group == null) {
             res.status(400).send({ "result": "failure", "reason": "group not found" })
+            return;
+        }
+        //asked before a private group's request is raised too, so nobody waits on an
+        //admin for an approval that would be turned down at the last step
+        if (await proSubscriptionRequiredToJoin(body.userId, body.groupId)) {
+            res.send({ "result": "subscriptionRequired", "reason": SUBSCRIPTION_REQUIRED })
             return;
         }
         if (group.visibility == "public") {
@@ -376,6 +444,14 @@ async function approveJoinRequest(req, res) {
                 return;
             }
 
+            //a request can sit for days, and the user's group count can change while it
+            //does, so the limit is checked again here rather than trusted from the ask
+            if (await proSubscriptionRequiredToJoin(joinRequest.userId, body.groupId)) {
+                //left pending: the request becomes approvable again if they subscribe
+                res.send({ "result": "subscriptionRequired", "reason": SUBSCRIPTION_REQUIRED })
+                return;
+            }
+
             //change status of request to approved
             joinRequest.status = "approved"
             admin.database().ref("joinRequests").child(body.groupId).child(body.pushId).update(joinRequest)
@@ -505,6 +581,12 @@ async function inviteUserToGroup(req, res) {
                         res.status(200).send({ "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "Existing user added to first group" })
                     } else if (user.groups.includes(body.groupId)) {
                         res.status(200).send({ "groupId": body.groupId, "userPublicId": body.userPublicId, "message": "User already in group" })
+                    } else if (await proSubscriptionRequiredToJoin(key, body.groupId)) {
+                        //an admin adding someone is still that someone joining a second
+                        //group, so the invitation is turned down rather than being the
+                        //way around the limit
+                        res.status(200).send({ "groupId": body.groupId, "userPublicId": body.userPublicId, "message": SUBSCRIPTION_REQUIRED })
+                        return;
                     } else {
                         user.groups.push(body.groupId)
                         console.log(user.groups)
