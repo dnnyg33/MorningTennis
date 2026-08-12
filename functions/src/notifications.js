@@ -226,14 +226,19 @@ async function run_groupSignupStatusNotification(groupId, title, body) {
     await sendNotificationsToGroup(message, registrationTokens)
 }
 
-/**"New potential matchup" — someone signed up over a slot of yours.
+/**"Potential matchup" — someone signed up over a slot of yours.
  *
  * Only when-is-good groups have slots to collide, so this is a no-op anywhere
  * else. Called with the incoming-v4 week node from either side of a write:
  * anything keyed in after but not in before is a submission that just landed.
  *
  * A member who resubmits only announces the slots they did not already have,
- * so tweaking your availability doesn't re-ping everyone you already matched. */
+ * so tweaking your availability doesn't re-ping everyone you already matched.
+ *
+ * The body names the window that collided, so recipients go in one send per
+ * window rather than one for the whole submission. Somebody who matched on
+ * more than one hears about the first of them: two pushes for one signup reads
+ * as a bug, and the schedule has the rest. */
 async function run_matchingSlotsNotification(groupId, before, after) {
     if (after == null) return;
     const algorithm = await sortingAlgorithmOf(groupId)
@@ -260,24 +265,72 @@ async function run_matchingSlotsNotification(groupId, before, after) {
         }
         //everyone else's newest submission, including ones made earlier in the week
         const others = latestSubmissionsByMember(after, submission.firebaseId)
-        const matched = others
-            .filter((other) => slotsOverlap(announced, slotsOf(other)))
-            .map((other) => other.firebaseId)
-        if (matched.length == 0) {
+        const byWindow = new Map()
+        for (const other of others) {
+            const slot = firstOverlapping(announced, slotsOf(other))
+            if (slot == null) continue;
+            const window = labelOf(slot)
+            if (!byWindow.has(window)) byWindow.set(window, [])
+            byWindow.get(window).push(other.firebaseId)
+        }
+        if (byWindow.size == 0) {
             console.log("No overlapping slots for " + submission.firebaseId + " in " + groupId)
             return;
         }
-        const recipients = await filterByNotificationPreference(groupId, matched, NOTIFICATION_CATEGORIES.matchingSlots)
-        const registrationTokens = await getRegistrationTokensFromFirebaseIds(recipients)
-        const message = {
-            "notification": {
-                "title": "New potential matchup",
-                "body": "See the schedule to see who signed up during one of your slots."
-            },
-            "tokens": registrationTokens,
-        };
-        await sendNotificationsToGroup(message, registrationTokens)
+        const name = nameOf(submission)
+        for (const [window, matched] of byWindow) {
+            const recipients = await filterByNotificationPreference(groupId, matched, NOTIFICATION_CATEGORIES.matchingSlots)
+            const registrationTokens = await getRegistrationTokensFromFirebaseIds(recipients)
+            const message = {
+                "notification": {
+                    "title": "Potential matchup",
+                    "body": name + " is available " + window
+                },
+                "tokens": registrationTokens,
+            };
+            await sendNotificationsToGroup(message, registrationTokens)
+        }
     }
+}
+
+/**Who the body names. Shortened the way the schedule shortens it, so the push
+ * and the slot it points at agree on what somebody is called. A submission
+ * with no name still gets sent — the window is the useful half. */
+function nameOf(submission) {
+    const name = submission.name
+    if (name == null || String(name).trim() === "") return "Someone";
+    return utilities.shortenedName(String(name).trim())
+}
+
+/**What to call a slot in the body. The app sends the label the member picked
+ * the window by ("Tuesday 8am - 10am"); slots painted on the calendar have no
+ * label, so those are named the way the app names them. */
+function labelOf(slot) {
+    const label = slot.label
+    if (label != null && String(label).trim() !== "") return String(label).trim();
+    return [dayLabel(slot.dayOfWeek), timeLabel(slot.startTime) + "-" + timeLabel(slot.endTime)]
+        .filter((part) => part !== "")
+        .join(" ")
+}
+
+/**Days are stored as the enum name, "tuesday". */
+function dayLabel(dayOfWeek) {
+    if (dayOfWeek == null) return "";
+    const day = String(dayOfWeek)
+    return day.charAt(0).toUpperCase() + day.slice(1)
+}
+
+/**"8.45" is 8:45, and "8.00" reads as 8:00 rather than 8.0. */
+function timeLabel(time) {
+    const minutes = minutesOf(time)
+    if (minutes == null) return String(time == null ? "" : time);
+    const hour = Math.floor(minutes / 60)
+    return hour + ":" + String(minutes % 60).padStart(2, "0")
+}
+
+/**The first of slotsA that touches anything in slotsB, or null. */
+function firstOverlapping(slotsA, slotsB) {
+    return slotsA.find((a) => slotsB.some((b) => overlaps(a, b))) || null
 }
 
 function slotsOf(submission) {
@@ -306,10 +359,6 @@ function overlaps(a, b) {
     const bEnd = minutesOf(b.endTime)
     if (aStart == null || aEnd == null || bStart == null || bEnd == null) return false;
     return aStart < bEnd && bStart < aEnd
-}
-
-function slotsOverlap(slotsA, slotsB) {
-    return slotsA.some((a) => slotsB.some((b) => overlaps(a, b)))
 }
 
 /**The slots in submission that the member had not already posted. */
