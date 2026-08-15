@@ -286,12 +286,26 @@ exports.sortWeekv6 = onValueWritten(
         const groupId = event.params.groupId;
         const weekName = event.params.day;
         const incomingSubmissionsData = event.data.after.val();
+        //future weeks are sorted as they come in, so their board is ready and
+        //waiting when the week arrives
         await runSort(groupId, incomingSubmissionsData, weekName);
-        await notifications.run_matchingSlotsNotification(
-            groupId,
-            event.data.before.val(),
-            incomingSubmissionsData,
-        );
+        //...but "someone is free when you are" only goes out about the week
+        //being played. A member signing up a month ahead should not push the
+        //whole group about a week they can do nothing with yet; the pushes for
+        //that week start once it is the week under way.
+        if (await isCurrentWeekForGroup(groupId, weekName)) {
+            await notifications.run_matchingSlotsNotification(
+                groupId,
+                event.data.before.val(),
+                incomingSubmissionsData,
+                weekName,
+            );
+        } else {
+            console.log(
+                `skipping matching-slot notifications for ${groupId}: ` +
+                `${weekName} is not the week under way`,
+            );
+        }
     },
 );
 
@@ -395,6 +409,35 @@ exports.scheduleAutoApproveStaleSets = onSchedule(
 // ===========================
 // Helpers (unchanged logic)
 // ===========================
+/**
+ * Whether [weekName] names the week group [groupId] is playing right now.
+ *
+ * Members can sign up for weeks ahead, and each of those weeks gets its own
+ * node, so a write no longer implies "this week". The week is derived the same
+ * way the reset derives it, off the group's own scheduleTimePreferences.
+ *
+ * Errs towards true: a group whose preferences can't be read should still send
+ * the notifications it has always sent rather than go quiet.
+ */
+async function isCurrentWeekForGroup(groupId, weekName) {
+    try {
+        const snapshot = await admin.database().ref("groups-v2").child(groupId).get();
+        const groupData = snapshot.val() ?? {};
+        const preferences = scheduleTiming.preferencesFor(groupData);
+        //named the same way the reset names the week it creates, down to the
+        //older weekStartDay fallback, or a group still on that field would
+        //look like it were never on its current week
+        const current = utilities.createNewWeekDbPath(
+            weekStartDayFor(groupData, preferences),
+            groupReferenceDate(new Date(), preferences),
+        );
+        return current === weekName;
+    } catch (error) {
+        console.log("could not read the current week for " + groupId + ": " + error);
+        return true;
+    }
+}
+
 async function runSort(groupId, incomingSubmissionsData, weekName) {
     admin.database().ref("groups-v2").child(groupId).child("scheduleIsBuilding").set(true);
 
@@ -404,7 +447,10 @@ async function runSort(groupId, incomingSubmissionsData, weekName) {
         .child(groupId)
         .once("value", (snapshot) => {
             const groupData = snapshot.val();
-            if (!groupData?.scheduleIsOpen) {
+            // A group that never closes is open by construction, so the flag
+            // says nothing about it — reading it as a gate would leave one
+            // that ever went false unable to sort at all.
+            if (scheduleTiming.signupsCanClose(groupData) && !groupData?.scheduleIsOpen) {
                 console.log("schedule is closed for group: " + groupId);
                 admin.database().ref("groups-v2").child(groupId).child("scheduleIsBuilding").set(false);
                 return;

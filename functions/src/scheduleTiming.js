@@ -88,6 +88,16 @@ function preferencesFor(groupData) {
             console.warn("ignoring unusable " + key + " '" + value + "', using " + merged[key]);
         }
     }
+    // A group that never closes has no separate signup window to open: its
+    // week simply begins, on its start day at the reset time. The reset day is
+    // therefore the start day, worked out here rather than written to the
+    // database — storing it would leave clients that predate this reading the
+    // week a week out, since to them a reset on the play start day opens the
+    // *following* week. The app derives the same pair the same way.
+    if (!signupsCanClose(groupData)) {
+        merged.signupOpenDay = merged.playStartDay;
+        merged.resetStartsWeek = true;
+    }
     return merged;
 }
 
@@ -180,9 +190,11 @@ function weekReferenceDate(date, preferences) {
     const isoDay = new Date(sinceReset).getUTCDay() || 7; // Monday 1 .. Sunday 7
     const daysBackToReset = (isoDay - resetDay + 7) % 7;
     // A reset landing on the play start day itself opens the following week
-    // rather than the one already under way.
+    // rather than the one already under way — unless the reset *is* the start
+    // of the week, in which case the week it opens is the one beginning that
+    // moment. Mirrors weekStartTime in the app's util.dart.
     let daysToPlayStart = (playStartDay - resetDay + 7) % 7;
-    if (daysToPlayStart === 0) daysToPlayStart = 7;
+    if (daysToPlayStart === 0 && !prefs.resetStartsWeek) daysToPlayStart = 7;
 
     const weekStart = new Date(
         sinceReset + (daysToPlayStart - daysBackToReset) * 24 * 60 * MS_PER_MINUTE,

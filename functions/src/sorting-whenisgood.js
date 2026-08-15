@@ -2,17 +2,20 @@ const admin = require("firebase-admin");
 module.exports.runSort = runSort;
 const index = require('./index.js')
 const utilities = require("./utilities.js");
+const slotMerge = require("./slot-merge.js");
 
 async function runSort(original, groupId, weekName) {
-    let groups =  tennisSortForIndividual(original, groupId)
+    let groups =  tennisSortForIndividual(original, groupId, weekName)
     console.log("groups: " + JSON.stringify(groups))
     admin.database().ref("sorted-v6").child(groupId).child("whenIsGood").child(weekName).set(groups)
     return groups;
 }
 
- function tennisSortForIndividual(data, groupId) {
+ function tennisSortForIndividual(data, groupId, weekName) {
     //for every player, for every slot, create list of other players who are available
-    let uniqueData = utilities.removeDuplicates(data)
+    //slots come in per painted hour and can repeat a day, so they are merged
+    //before anything is grouped off them — see slot-merge.js
+    let uniqueData = slotMerge.normalizeSubmissions(utilities.removeDuplicates(data), weekName)
     let mapOfGroupsByPlayer = {}
     let listOfAllSlots = flattenSlots(uniqueData)
     for (const [key, player] of Object.entries(uniqueData)) {

@@ -14,6 +14,9 @@ const admin = require("firebase-admin");
 const index = require("./index.js")
 const utilities = require("./utilities.js");
 const scheduleTiming = require("./scheduleTiming.js");
+const slotMerge = require("./slot-merge.js");
+
+const MINUTES_IN_DAY = 24 * 60;
 
 /**The categories a member can switch off for one group, from the app's
  * notification settings page. Stored at
@@ -238,10 +241,19 @@ async function run_groupSignupStatusNotification(groupId, title, body) {
  * The body names the window that collided, so recipients go in one send per
  * window rather than one for the whole submission. Somebody who matched on
  * more than one hears about the first of them: two pushes for one signup reads
- * as a bug, and the schedule has the rest. */
-async function run_matchingSlotsNotification(groupId, before, after) {
+ * as a bug, and the schedule has the rest.
+ *
+ * Two things keep a match quiet. A window that has already closed is not a
+ * matchup anybody can act on, so slots whose hours have run out where the
+ * group plays are dropped — both the ones being announced and the ones they
+ * landed on, since a member whose own morning is over has nothing to answer
+ * either. And a member who has already said yes or no to their window has
+ * dealt with that slot: the push exists to ask for an RSVP, so it goes only
+ * to the members who still owe one. */
+async function run_matchingSlotsNotification(groupId, before, after, weekName) {
     if (after == null) return;
-    const algorithm = await sortingAlgorithmOf(groupId)
+    const groupData = (await admin.database().ref("groups-v2").child(groupId).once('value')).val() || {}
+    const algorithm = groupData.sortingAlgorithm
     if (!groupSendsCategory(algorithm, NOTIFICATION_CATEGORIES.matchingSlots)) {
         console.log("Group " + groupId + " sorts by " + algorithm + ", no slots to match")
         return;
@@ -252,24 +264,49 @@ async function run_matchingSlotsNotification(groupId, before, after) {
         console.log("No new submissions in " + groupId + ", nothing to match")
         return;
     }
+    //undated slots are placed on the week node they were written into, the
+    //same way the sort places them
+    const weekStart = slotMerge.weekStartOf(weekName)
+    const now = nowWhere(scheduleTiming.timeZoneOf(groupData))
+    const rsvps = await rsvpsForWeek(groupId, weekName)
     for (const key of newKeys) {
         await announceSubmission(after[key], key)
     }
 
     async function announceSubmission(submission, key) {
         if (submission == null || submission.firebaseId == null) return;
-        const announced = newSlotsIn(submission, latestSubmissionFor(beforeWeek, submission.firebaseId))
-        if (announced.length == 0) {
+        const submitted = newSlotsIn(submission, latestSubmissionFor(beforeWeek, submission.firebaseId))
+        if (submitted.length == 0) {
             console.log(submission.firebaseId + " resubmitted with nothing new")
+            return;
+        }
+        const announced = submitted.filter((slot) => !hasPassed(slot))
+        if (announced.length == 0) {
+            console.log("Every new slot from " + submission.firebaseId + " has already been and gone")
             return;
         }
         //everyone else's newest submission, including ones made earlier in the week
         const others = latestSubmissionsByMember(after, submission.firebaseId)
         const byWindow = new Map()
         for (const other of others) {
-            const slot = firstOverlapping(announced, slotsOf(other))
-            if (slot == null) continue;
-            const window = labelOf(slot)
+            //merged, because that is the window the board shows them and so
+            //the window their RSVP is filed under
+            const windows = slotMerge.mergeSlots(slotsOf(other), weekStart)
+            const match = firstOverlap(announced, windows, (window) => {
+                //an announced slot still running can reach back over a window
+                //of theirs that has closed — 8 till noon lands on a 8 till 9
+                if (hasPassed(window)) {
+                    console.log(other.firebaseId + "'s " + labelOf(window) + " has already been and gone")
+                    return false;
+                }
+                if (hasAnswered(other.firebaseId, window)) {
+                    console.log(other.firebaseId + " has already RSVP'd for " + labelOf(window))
+                    return false;
+                }
+                return true;
+            })
+            if (match == null) continue;
+            const window = labelOf(match.announced)
             if (!byWindow.has(window)) byWindow.set(window, [])
             byWindow.get(window).push(other.firebaseId)
         }
@@ -291,6 +328,95 @@ async function run_matchingSlotsNotification(groupId, before, after) {
             await sendNotificationsToGroup(message, registrationTokens)
         }
     }
+
+    /**Whether [slot]'s window has closed where the group plays.
+     *
+     * Read to the minute rather than to the day: most of a group's slots are
+     * mornings, so a day's play is over long before the day is, and "today"
+     * alone would keep pushing this morning's court all afternoon.
+     *
+     * A slot still running counts as open — there is an hour of it left to
+     * take somebody up on. Anything this cannot place, in date or in time, is
+     * treated as still to come: dropping matchups nobody can act on is the
+     * point, and a slot it cannot read is no reason to drop one somebody
+     * can. */
+    function hasPassed(slot) {
+        if (now == null) return false;
+        const date = slotMerge.dateOfSlot(slot, weekStart)
+        if (date == null || date > now.date) return false;
+        if (date < now.date) return true;
+        const end = endMinutesOf(slot)
+        return end != null && end <= now.minutes;
+    }
+
+    /**Whether [firebaseId] has already said yes or no to [slot], their own
+     * window. Either answer means they have dealt with that slot, and this
+     * push is the ask for one. */
+    function hasAnswered(firebaseId, slot) {
+        const answers = rsvps[firebaseId]
+        if (answers == null) return false;
+        const key = rsvpKeyOf(slot)
+        return key != null && answers[key] != null;
+    }
+}
+
+/**Every RSVP filed on [weekName], as firebaseId -> window key -> is coming.
+ *
+ * "When is good" RSVPs live outside the sorted week — the sort rewrites that
+ * node wholesale every time anybody submits — at rsvps-v1, which is where
+ * getWhenIsGoodRsvpLocation in the app's util.dart writes them.
+ *
+ * A read that fails hands back nothing, so the pushes go out as they did
+ * before: a database hiccup must not silence a whole group. */
+async function rsvpsForWeek(groupId, weekName) {
+    if (weekName == null) return {};
+    try {
+        const snapshot = await admin.database().ref("rsvps-v1").child(groupId).child(weekName).once('value')
+        return snapshot.val() || {};
+    } catch (e) {
+        console.error("Could not read RSVPs for " + groupId + "/" + weekName + ", sending to everyone: " + e)
+        return {};
+    }
+}
+
+/**The key one RSVP is filed under: the day, plus the member's own window as
+ * the board shows it. Mirrors whenIsGoodRsvpKey in the app's schedule_bloc.dart
+ * — times are stored as "8.00" and a realtime database key cannot hold a dot,
+ * so it goes in as "8-00". Null for a slot with no window to key on. */
+function rsvpKeyOf(slot) {
+    const day = dayLabel(slot.dayOfWeek)
+    if (day === "" || slot.startTime == null || slot.endTime == null) return null;
+    return (day + "_" + slot.startTime + "_" + slot.endTime).replace(/\./g, "-")
+}
+
+/**The moment the group is living in: its calendar date as "2026-08-15", and
+ * how far into that day it is in minutes. Null if the zone can't be read.
+ *
+ * The container's own clock is no use for either half: it runs in UTC, so it
+ * turns the day over in the middle of the evening a slot belongs to, and its
+ * hour is somebody else's. */
+function nowWhere(timeZone) {
+    try {
+        const at = new Date()
+        return {
+            date: utilities.fmt(scheduleTiming.zonedWallClockDate(at, timeZone), "YYYY-MM-DD"),
+            minutes: scheduleTiming.zonedNow(at, timeZone).weekMinute % MINUTES_IN_DAY,
+        };
+    } catch (e) {
+        console.error("Could not read the time in " + timeZone + ", keeping every slot: " + e)
+        return null;
+    }
+}
+
+/**Where a slot's window closes, in minutes from the start of its day, or null
+ * if it hasn't got a readable one. A span reaching midnight is stored as 0:00
+ * — it closes the day rather than ending before it began — so it counts as the
+ * end of that day and not the start of it. */
+function endMinutesOf(slot) {
+    const end = minutesOf(slot.endTime)
+    if (end == null) return null;
+    const start = minutesOf(slot.startTime)
+    return start != null && end <= start ? end + MINUTES_IN_DAY : end;
 }
 
 /**Who the body names. Shortened the way the schedule shortens it, so the push
@@ -328,9 +454,21 @@ function timeLabel(time) {
     return hour + ":" + String(minutes % 60).padStart(2, "0")
 }
 
-/**The first of slotsA that touches anything in slotsB, or null. */
-function firstOverlapping(slotsA, slotsB) {
-    return slotsA.find((a) => slotsB.some((b) => overlaps(a, b))) || null
+/**The first of [announced] that touches a window of [theirs] which
+ * [worthAsking] still wants asked about, as both halves of the collision, or
+ * null when nothing does. Both halves are needed: the announced slot names the
+ * window in the body, and theirs is the window their RSVP is filed under.
+ *
+ * Every overlapping window gets its turn, not just the first one found. A
+ * member free in the morning and again in the evening has two answers to give,
+ * and which of the two a new signup happens to reach first is no reason to
+ * hear about one and not the other. */
+function firstOverlap(announced, theirs, worthAsking) {
+    for (const slot of announced) {
+        const match = theirs.find((other) => overlaps(slot, other) && worthAsking(other))
+        if (match != null) return { announced: slot, theirs: match };
+    }
+    return null;
 }
 
 function slotsOf(submission) {
